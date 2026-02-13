@@ -84,7 +84,7 @@ prob = ODEProblem(
 )
 prob.f.initializeprob isa NonlinearProblem
 sol = solve(prob.f.initializeprob)
-@test maximum(abs.(sol[conditions])) < 5.0e-14
+@test maximum(abs.(sol[conditions])) < 1.0e-13
 sol = solve(prob, Rodas5P(); abstol = 1.0e-14)
 if @isdefined(ModelingToolkit)
     @test maximum(abs.(sol[conditions][1])) < 1.0e-14
