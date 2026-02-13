@@ -360,8 +360,21 @@ end
     @test prob.u0 isa SVector
     @test prob.p.tunable isa SVector
     @test prob.p.initials isa SVector
-    initdata = prob.f.initialization_data
+    initdata = prob.f.initialization_data;
     @test state_values(initdata.initializeprob) isa SVector
+    if @isdefined(ModelingToolkit)
+        @test initdata.initializeprob isa SCCNonlinearProblem
+        for prob in initdata.initializeprob.probs
+            if prob isa NonlinearProblem
+                @test prob.u0 isa SVector
+            elseif prob isa LinearProblem
+                @test prob.A isa SMatrix
+                @test prob.b isa SVector
+            else
+                @test false
+            end
+        end
+    end
     @test parameter_values(initdata.initializeprob).tunable isa SVector
 
     pend = complete(pend; split = false)
