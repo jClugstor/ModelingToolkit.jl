@@ -1623,17 +1623,6 @@ function process_SciMLProblem(
         du0 = nothing
     end
 
-    if build_initializeprob && (u0 === nothing || eltype(u0) <: Number)
-        t0 = t
-        if is_time_dependent(sys) && t0 === nothing
-            t0 = zero(floatT)
-        end
-        initialization_data = @invokelatest SciMLBase.remake_initialization_data(
-            sys, kwargs, u0, t0, p, u0, p
-        )
-        kwargs = merge(kwargs, (; initialization_data))
-    end
-
     if constructor <: NonlinearFunction && length(dvs) != length(eqs)
         kwargs = merge(
             kwargs,
