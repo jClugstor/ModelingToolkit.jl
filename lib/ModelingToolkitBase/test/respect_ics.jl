@@ -2,7 +2,7 @@ using ModelingToolkit, NonlinearSolve
 using ModelingToolkit: t_nounits as t, D_nounits as D
 using Test
 
-@testset "ensure ICs are respected" begin
+@testset "Issue #4258" begin
     @parameters g
     @variables x(t) y(t) [state_priority = 10] λ(t)
     eqs = [D(D(x)) ~ λ * x
