@@ -1411,7 +1411,7 @@ function calculate_A_b(sys::System; sparse = false, throw = true)
         lex = Symbolics.LinearExpander(var; strict = true)
         for (i, resid) in enumerate(rhss)
             p, q, islinear = lex(resid)
-            if !islinear
+            if (!islinear || !isempty(Symbolics.get_variables(p, dvs)))
                 err = NotAffineError(fulleqs[i].rhs, var)
                 cache[CachedLinearAb] = err
                 throw || return nothing
