@@ -1122,6 +1122,16 @@ end
             t; guesses = [x => 0.0, y => 0.0, z => 0.0, p => 0.0, q => 0.0]
         )
         prob = Problem(sys, [x => 1.0, p => 1.0, q => missing], (0.0, 1.0))
+        # This `remake` is necessary because as of https://github.com/SciML/ModelingToolkit.jl/pull/4305/
+        # we don't call `remake_initialization_data` in the problem constructor. The only
+        # difference this makes is that `remake_initialization_data` would have taken
+        # some dummy derivative guesses from the `ODEProblem`, but this is not crucial behavior.
+        # This `remake` only serves to make the test labeled with a `remake_fixes` comment
+        # pass. This test group really only cares about the types being correct. This is only
+        # required for MTKBase since MTK eliminates the derivative as an observed.
+        if !@isdefined(ModelingToolkit)
+            prob = remake(prob; p = prob.p)
+        end
         @test is_variable(prob.f.initialization_data.initializeprob, q)
         ps = prob.p
         newps = SciMLStructures.replace(Tunable(), ps, ForwardDiff.Dual.(ps.tunable))
@@ -1130,6 +1140,7 @@ end
         ForwardDiff.Dual
         @test eltype(prob2.f.initialization_data.initializeprob.p.tunable) <:
         ForwardDiff.Dual
+        # remake_fixes:
         @test state_values(prob2.f.initialization_data.initializeprob) ≈
             state_values(prob.f.initialization_data.initializeprob)
 
