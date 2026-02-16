@@ -317,7 +317,7 @@ function SciMLBase.SCCNonlinearProblem{iip}(
         symbolic_idxs = findall(x -> x === nothing || symbolic_type(x) !== NotSymbolic(), _u0)
         if f isa LinearFunction
             _u0 = isempty(symbolic_idxs) ? _u0 : zeros(u0_eltype, length(_u0))
-            _u0 = u0_eltype.(_u0)
+            _u0 = u0_constructor(u0_eltype.(_u0))
             cachevars = scc_cachevars[i]
             cacheexprs = scc_cacheexprs[i]
             for T in keys(cachevars)
@@ -356,7 +356,7 @@ function SciMLBase.SCCNonlinearProblem{iip}(
                     MissingGuessValue.Error() => throw(MissingGuessError(dvs[vscc], _u0))
                 end
             end
-            _u0 = u0_eltype.(_u0)
+            _u0 = u0_constructor(u0_eltype.(_u0))
             prob = NonlinearProblem(f, _u0, p)
         end
         push!(subprobs, prob)
