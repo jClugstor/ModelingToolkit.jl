@@ -207,3 +207,17 @@ if @isdefined(ModelingToolkit)
     bf = bifurcationdiagram(bp, PALC(), 2, opts_br)
     @test bf.γ.specialpoint[1].param ≈ 0.1 atol = 1.0e-4 rtol = 1.0e-4
 end
+
+@testset "With array parameters" begin
+    @variables X1(t) X2(t)
+    @parameters k1 k2 Γ[1:1]
+    eqs = [
+        0 ~ -k1*X1 + k2*(-X1 + Γ[1])
+        0 ~ X2 + X1 - Γ[1]
+    ]
+    @mtkcompile nsys2 = System(eqs)
+
+    @test_nowarn BifurcationKit.BifurcationProblem(
+        nsys2, [X1 => 5.0, X2 => 8.0], [k1 => 8.0, k2 => 1.0, Γ => [13.0]], k1; plot_var = X1
+    )
+end

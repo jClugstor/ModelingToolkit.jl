@@ -120,7 +120,9 @@ function BifurcationKit.BifurcationProblem(
         )
         nsys = complete(nsys)
     end
+    @set! nsys.ps = mapreduce(collect, vcat, ModelingToolkitBase.get_ps(nsys))
     @set! nsys.index_cache = nothing # force usage of a parameter vector instead of `MTKParameters`
+    nsys = complete(nsys; split = false)
     # Creates F and J functions.
     ofun = NonlinearFunction(nsys; jac = jac)
     F = let f = ofun.f
