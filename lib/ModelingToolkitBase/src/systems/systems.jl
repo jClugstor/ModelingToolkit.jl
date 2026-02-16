@@ -241,7 +241,7 @@ function __mtkcompile(
     end
     # Nonlinear system
     if !has_derivatives && !has_shifts
-        obseqs = Equation[]
+        obseqs = copy(original_obs)
         get_trivial_observed_equations!(Equation[], eqs, obseqs, all_dvs, nothing)
         add_array_observed!(obseqs)
         obseqs = topsort_equations(obseqs, [eq.lhs for eq in obseqs])
