@@ -345,11 +345,11 @@ function SciMLBase.SCCNonlinearProblem{iip}(
                         end
                     end
                     MissingGuessValue.Random(rng) => begin
-                        newval = rand(rng, length(symbolic_ixs))
-                        _u0[dvs[vscc]] .= newval
-                        for j in symbolic_idxs
+                        newval = rand(rng, length(symbolic_idxs))
+                        _u0[symbolic_idxs] .= newval
+                        for (idx, j) in enumerate(symbolic_idxs)
                             write_possibly_indexed_array!(
-                                op, dvs[vscc[j]], Symbolics.SConst(newval[j]), COMMON_NOTHING
+                                op, dvs[vscc[j]], Symbolics.SConst(newval[idx]), COMMON_NOTHING
                             )
                         end
                     end
