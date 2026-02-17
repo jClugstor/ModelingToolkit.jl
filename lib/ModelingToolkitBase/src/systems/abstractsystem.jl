@@ -2622,7 +2622,7 @@ function _named(name, call, runtime = false)
     end
     op = call.args[1]
     return quote
-        $is_sys_construction = ($op isa $DataType) && ($op <: $AbstractSystem)
+        $is_sys_construction = ($op isa $Type) && ($op <: $AbstractSystem)
         $call
     end
 end
