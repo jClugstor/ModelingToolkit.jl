@@ -58,6 +58,12 @@
         prob = DiscreteProblem(df, u0, tspan, p; kwargs...)
     end
 
+    # Create SymbolicTstops only for paths that don't go through process_kwargs.
+    # Paths 1/2 (MTK SDEProblem/ODEProblem with has_eqs) already create their own
+    # SymbolicTstops via process_kwargs. Paths 3/4 (VRJ-only, pure jumps) need it here.
+    # In all cases tstops is forwarded via the JumpProblem constructor's kwargs.
+    tstops = has_eqs ? nothing : SymbolicTstops(sys; eval_expression, eval_module)
+
     dvs = unknowns(sys)
     unknowntoid = Dict(value(unknown) => i for (i, unknown) in enumerate(dvs))
     js = jumps(sys)
@@ -107,6 +113,9 @@
 
     if rng !== nothing
         kwargs = (; kwargs..., rng)
+    end
+    if tstops !== nothing
+        kwargs = (; kwargs..., tstops)
     end
     return JumpProblem(
         prob, aggregator, jset; dep_graph = jtoj, vartojumps_map = vtoj,
