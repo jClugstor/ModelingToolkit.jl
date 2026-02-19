@@ -1,15 +1,3 @@
-macro mtkcompile(ex...)
-    return quote
-        @mtkbuild $(ex...)
-    end
-end
-
-function mtkcompile(args...; kwargs...)
-    return structural_simplify(args...; kwargs...)
-end
-
-#################################
-
 using ModelingToolkit, OrdinaryDiffEq, StochasticDiffEq
 using ModelingToolkit: t_nounits as t, D_nounits as D
 
