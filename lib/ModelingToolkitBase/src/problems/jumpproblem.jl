@@ -16,13 +16,13 @@
             prob = SDEProblem{iip, spec}(
                 sys, op, tspan; check_compatibility = false,
                 build_initializeprob = false, checkbounds, cse, check_length = false,
-                _skip_events = true, kwargs...
+                _skip_events = true, _skip_tstops = true, kwargs...
             )
         elseif has_eqs
             prob = ODEProblem{iip, spec}(
                 sys, op, tspan; check_compatibility = false,
                 build_initializeprob = false, checkbounds, cse, check_length = false,
-                _skip_events = true, kwargs...
+                _skip_events = true, _skip_tstops = true, kwargs...
             )
         else
             _, u0,
@@ -58,11 +58,10 @@
         prob = DiscreteProblem(df, u0, tspan, p; kwargs...)
     end
 
-    # Create SymbolicTstops only for paths that don't go through process_kwargs.
-    # Paths 1/2 (MTK SDEProblem/ODEProblem with has_eqs) already create their own
-    # SymbolicTstops via process_kwargs. Paths 3/4 (VRJ-only, pure jumps) need it here.
-    # In all cases tstops is forwarded via the JumpProblem constructor's kwargs.
-    tstops = has_eqs ? nothing : SymbolicTstops(sys; eval_expression, eval_module)
+    # Create SymbolicTstops for all paths and forward via JumpProblem kwargs.
+    # Inner problems (SDEProblem/ODEProblem) are created with _skip_tstops = true
+    # to avoid duplication.
+    tstops = SymbolicTstops(sys; eval_expression, eval_module)
 
     dvs = unknowns(sys)
     unknowntoid = Dict(value(unknown) => i for (i, unknown) in enumerate(dvs))

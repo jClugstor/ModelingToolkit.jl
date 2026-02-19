@@ -1424,7 +1424,7 @@ end
         @test sol(5.0 + 0.001; idxs = X) - sol(5.0 - 0.001; idxs = X) ≈ 2000 atol = 5
     end
 
-    # Path 2: ODEs + jumps → MTK ODEProblem (process_kwargs handles tstops)
+    # Path 2: ODEs + jumps → MTK ODEProblem (tstops created at JumpProblem level)
     # Multiple tstops with multi-parameter expression
     @testset "ODEs + jumps with symbolic tstops" begin
         @variables X(t)
@@ -1433,19 +1433,18 @@ end
         crj = ConstantRateJump(b, [X ~ Pre(X) - 1])
         ev1 = (t == t1) => [X ~ Pre(X) + 100.0]
         ev2 = (t == t1 * t2) => [X ~ Pre(X) + 200.0]
-        @named jsys = JumpSystem([crj, eq], t, [X], [a, b, t1, t2];
+        @mtkcompile jsys = System([eq], t, [X], [a, b, t1, t2]; jumps = [crj],
             discrete_events = [ev1, ev2], tstops = [t1, t1 * t2])
-        jsys = complete(jsys)
 
         jprob = JumpProblem(jsys,
             [X => 10.0, a => 1.0, b => 0.01, t1 => 2.0, t2 => 3.0],
             (0.0, 10.0); rng)
 
         @test jprob.prob isa ODEProblem
-        # Inner MTK ODEProblem creates its own SymbolicTstops via process_kwargs
-        @test haskey(jprob.prob.kwargs, :tstops)
-        # tstops should NOT also be in JumpProblem kwargs
-        @test !haskey(jprob.kwargs, :tstops)
+        # tstops are created at JumpProblem level; inner problem has _skip_tstops
+        @test haskey(jprob.kwargs, :tstops)
+        @test jprob.kwargs[:tstops] isa MT.SymbolicTstops
+        @test !haskey(jprob.prob.kwargs, :tstops)
 
         sol = solve(jprob, Tsit5())
         @test SciMLBase.successful_retcode(sol)
@@ -1453,6 +1452,64 @@ end
         # Check event effects via the jump in X across each tstop
         @test sol(2.0 + 0.001; idxs = X) - sol(2.0 - 0.001; idxs = X) ≈ 100.0 atol = 2
         @test sol(6.0 + 0.001; idxs = X) - sol(6.0 - 0.001; idxs = X) ≈ 200.0 atol = 2
+    end
+
+    # Path 1: SDEs + jumps → MTK SDEProblem (tstops created at JumpProblem level)
+    # Multiple tstops with multi-parameter expression
+    @testset "SDEs + jumps with symbolic tstops" begin
+        @variables X(t)
+        @parameters k σ_noise t1 t2
+        @brownians B
+        eqs = [D(X) ~ k + σ_noise * B]
+        crj = ConstantRateJump(k, [X ~ Pre(X) - 1])
+        ev1 = (t == t1) => [X ~ Pre(X) + 100.0]
+        ev2 = (t == t1 + t2) => [X ~ Pre(X) + 200.0]
+        @mtkcompile jsys = System(eqs, t, [X], [k, σ_noise, t1, t2], [B]; jumps = [crj],
+            discrete_events = [ev1, ev2], tstops = [t1, t1 + t2])
+
+        jprob = JumpProblem(jsys,
+            [X => 10.0, k => 0.5, σ_noise => 0.01, t1 => 1.0, t2 => 2.0],
+            (0.0, 5.0); rng)
+
+        @test jprob.prob isa SDEProblem
+        # tstops are created at JumpProblem level; inner problem has _skip_tstops
+        @test haskey(jprob.kwargs, :tstops)
+        @test jprob.kwargs[:tstops] isa MT.SymbolicTstops
+        @test !haskey(jprob.prob.kwargs, :tstops)
+
+        sol = solve(jprob, SOSRI())
+        @test SciMLBase.successful_retcode(sol)
+
+        # Check event effects via the jump in X across each tstop
+        @test sol(1.0 + 0.001; idxs = X) - sol(1.0 - 0.001; idxs = X) ≈ 100.0 atol = 2
+        @test sol(3.0 + 0.001; idxs = X) - sol(3.0 - 0.001; idxs = X) ≈ 200.0 atol = 2
+    end
+
+    # Pure SDE (no jumps) with symbolic tstops
+    # Multiple tstops with multi-parameter expression
+    @testset "Pure SDE with symbolic tstops" begin
+        @variables X(t)
+        @parameters k σ_noise t1 t2
+        @brownians B
+        eqs = [D(X) ~ k + σ_noise * B]
+        ev1 = (t == t1) => [X ~ Pre(X) + 50.0]
+        ev2 = (t == t1 * t2) => [X ~ Pre(X) + 100.0]
+        @mtkcompile sys = System(eqs, t, [X], [k, σ_noise, t1, t2], [B];
+            discrete_events = [ev1, ev2], tstops = [t1, t1 * t2])
+
+        sprob = SDEProblem(sys,
+            [X => 0.0, k => 1.0, σ_noise => 0.01, t1 => 2.0, t2 => 3.0],
+            (0.0, 10.0))
+
+        @test haskey(sprob.kwargs, :tstops)
+        @test sprob.kwargs[:tstops] isa MT.SymbolicTstops
+
+        sol = solve(sprob, SOSRI())
+        @test SciMLBase.successful_retcode(sol)
+
+        # Check event effects via the jump in X across each tstop
+        @test sol(2.0 + 0.001; idxs = X) - sol(2.0 - 0.001; idxs = X) ≈ 50.0 atol = 2
+        @test sol(6.0 + 0.001; idxs = X) - sol(6.0 - 0.001; idxs = X) ≈ 100.0 atol = 2
     end
 
     # Test that systems with no tstops don't break anything
