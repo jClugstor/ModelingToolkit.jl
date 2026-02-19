@@ -40,7 +40,7 @@ struct ObservableRecordFromSolution{S, T}
         # Gets the (base) substitution values for states.
         subs_vals_states = Pair.(unknowns(nsys), u0_vals)
         # Gets the (base) substitution values for parameters.
-        subs_vals_params = Pair.(parameters(nsys), p_vals)
+        subs_vals_params = Pair.(ModelingToolkitBase.get_ps(nsys), p_vals)
         # Gets the (base) substitution values for observables.
         subs_vals_obs = [
             obs.lhs => substitute(
@@ -60,7 +60,7 @@ struct ObservableRecordFromSolution{S, T}
         # During the bifurcation process, the value of some states, parameters, and observables may vary (and are calculated in each step). Those that are not are stored in this vector
         subs_vals = [subs_vals_states; subs_vals_params; subs_vals_obs]
 
-        param_end_idxs = state_end_idxs + length(parameters(nsys))
+        param_end_idxs = state_end_idxs + length(ModelingToolkitBase.get_ps(nsys))
         return new{typeof(obs_eqs), typeof(subs_vals)}(
             obs_eqs,
             target_obs_idx,
@@ -133,14 +133,14 @@ function BifurcationKit.BifurcationProblem(
 
     # Converts the input state guess.
     u0_bif = ModelingToolkitBase.to_varmap(u0_bif, unknowns(nsys))
-    u0_buf = merge(ModelingToolkitBase.get_initial_conditions(nsys), u0_bif)
-    u0_bif_vals = ModelingToolkitBase.varmap_to_vars(u0_bif, unknowns(nsys))
-    ps = ModelingToolkitBase.to_varmap(ps, parameters(nsys))
-    ps = merge(ModelingToolkitBase.get_initial_conditions(nsys), ps)
-    p_vals = ModelingToolkitBase.varmap_to_vars(ps, parameters(nsys))
+    ps = ModelingToolkitBase.to_varmap(ps, ModelingToolkitBase.get_ps(nsys))
+    op = merge(u0_bif, ps)
+    _, u0_bif_vals, p_vals = ModelingToolkitBase.process_SciMLProblem(
+        ModelingToolkitBase.EmptySciMLFunction{true}, nsys, op; build_initializeprob = false
+    )
 
     # Computes bifurcation parameter and the plotting function.
-    bif_idx = findfirst(isequal(bif_par), parameters(nsys))
+    bif_idx = findfirst(isequal(bif_par), ModelingToolkitBase.get_ps(nsys))
     if !isnothing(plot_var)
         # If the plot var is a normal state.
         if any(isequal(plot_var, var) for var in unknowns(nsys))
