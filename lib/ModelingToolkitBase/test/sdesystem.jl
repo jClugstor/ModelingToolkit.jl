@@ -1106,8 +1106,9 @@ end
 end
 
 # NOTE: Solve + event verification requires StochasticDiffEq's __solve to properly
-# handle callable tstops and callbacks in SDEProblem kwargs. Once that is fixed
-# upstream, add solve + event verification tests here.
+# handle callable tstops and callbacks in SDEProblem kwargs, and a fix for tstops at
+# t0 causing DtLessThanMin. Once those are fixed upstream, uncomment the solve + event
+# verification tests below.
 @testset "Pure SDE with symbolic tstops" begin
     @variables X(tt)
     @parameters k σ_noise t1 t2
@@ -1124,6 +1125,15 @@ end
 
     @test haskey(sprob.kwargs, :tstops)
     @test sprob.kwargs[:tstops] isa ModelingToolkitBase.SymbolicTstops
+
+    # Uncomment once StochasticDiffEq handles callable tstops/callbacks in SDEProblem
+    # kwargs and handles callable tstops at t0:
+    # sol = solve(sprob, SOSRI())
+    # @test SciMLBase.successful_retcode(sol)
+    #
+    # # Events at t1=2.0 and t1*t2=6.0 should fire
+    # @test sol(2.0 + 0.001; idxs = X) - sol(2.0 - 0.001; idxs = X) ≈ 50.0 atol = 2
+    # @test sol(6.0 + 0.001; idxs = X) - sol(6.0 - 0.001; idxs = X) ≈ 100.0 atol = 2
 end
 
 if !@isdefined(ModelingToolkit)

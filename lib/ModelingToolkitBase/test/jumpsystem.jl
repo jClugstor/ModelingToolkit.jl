@@ -1457,8 +1457,9 @@ end
     # Path 1: SDEs + jumps → MTK SDEProblem (tstops created at JumpProblem level)
     # Multiple tstops with multi-parameter expression
     # NOTE: Event firing verification requires StochasticDiffEq's __solve for JumpProblems
-    # to properly forward callbacks via merge_problem_kwargs. Once that is fixed upstream,
-    # add solve + event verification tests here (similar to the ODE path above).
+    # to properly forward callbacks via merge_problem_kwargs, and a fix for tstops at t0
+    # causing DtLessThanMin. Once those are fixed upstream, uncomment the solve + event
+    # verification tests below.
     @testset "SDEs + jumps with symbolic tstops" begin
         @variables X(t)
         @parameters k σ_noise t1 t2
@@ -1479,6 +1480,15 @@ end
         @test haskey(jprob.kwargs, :tstops)
         @test jprob.kwargs[:tstops] isa MT.SymbolicTstops
         @test !haskey(jprob.prob.kwargs, :tstops)
+
+        # Uncomment once StochasticDiffEq forwards JumpProblem callbacks and handles
+        # callable tstops at t0:
+        # sol = solve(jprob, SOSRI())
+        # @test SciMLBase.successful_retcode(sol)
+        #
+        # # Events at t1=1.0 and t1+t2=3.0 should fire
+        # @test sol(1.0 + 0.001; idxs = X) - sol(1.0 - 0.001; idxs = X) ≈ 100.0 atol = 2
+        # @test sol(3.0 + 0.001; idxs = X) - sol(3.0 - 0.001; idxs = X) ≈ 200.0 atol = 2
     end
 
     # Test that systems with no tstops don't break anything
