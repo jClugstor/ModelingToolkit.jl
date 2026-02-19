@@ -1105,6 +1105,27 @@ end
     @test !(sol3.u[end] ≈ sol4.u[end])
 end
 
+# NOTE: Solve + event verification requires StochasticDiffEq's __solve to properly
+# handle callable tstops and callbacks in SDEProblem kwargs. Once that is fixed
+# upstream, add solve + event verification tests here.
+@testset "Pure SDE with symbolic tstops" begin
+    @variables X(tt)
+    @parameters k σ_noise t1 t2
+    @brownians B
+    eqs = [D(X) ~ k + σ_noise * B]
+    ev1 = (tt == t1) => [X ~ Pre(X) + 50.0]
+    ev2 = (tt == t1 * t2) => [X ~ Pre(X) + 100.0]
+    @mtkcompile sys = System(eqs, tt, [X], [k, σ_noise, t1, t2], [B];
+        discrete_events = [ev1, ev2], tstops = [t1, t1 * t2])
+
+    sprob = SDEProblem(sys,
+        [X => 0.0, k => 1.0, σ_noise => 0.01, t1 => 2.0, t2 => 3.0],
+        (0.0, 10.0))
+
+    @test haskey(sprob.kwargs, :tstops)
+    @test sprob.kwargs[:tstops] isa ModelingToolkitBase.SymbolicTstops
+end
+
 if !@isdefined(ModelingToolkit)
     @testset "MTKBase `mtkcompile` creates appropriately sized `noise_eqs`" begin
         @variables X(t) A(t)
