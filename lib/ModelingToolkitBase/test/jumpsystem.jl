@@ -1342,7 +1342,7 @@ end
         ev1 = (t == t1) => [X ~ Pre(X) + 1000]
         ev2 = (t == t1 + t2) => [X ~ Pre(X) + 2000]
         @named jsys = JumpSystem([crj], t, [X], [k, t1, t2];
-            discrete_events = [ev1, ev2], tstops = [t1, t1 + t2])
+            discrete_events = [ev1, ev2], tstops = [[t1], [t1 + t2]])
         jsys = complete(jsys)
 
         jprob = JumpProblem(jsys, [X => 100, k => 0.1, t1 => 3.0, t2 => 4.0],
@@ -1351,6 +1351,7 @@ end
         @test jprob.prob isa DiscreteProblem
         @test haskey(jprob.kwargs, :tstops)
         @test jprob.kwargs[:tstops] isa MT.SymbolicTstops
+        @test Set(jprob.kwargs[:tstops](jprob.prob.p, (0.0, 10.0))) == Set([3.0, 7.0])
 
         sol = solve(jprob, SSAStepper())
         @test SciMLBase.successful_retcode(sol)
@@ -1372,7 +1373,7 @@ end
         ev1 = (t == t1) => [X ~ Pre(X) + 500]
         ev2 = (t == t2) => [X ~ Pre(X) + 500]
         @named jsys = JumpSystem([maj], t, [X], [k, t1, t2];
-            discrete_events = [ev1, ev2], tstops = [t1, t2])
+            discrete_events = [ev1, ev2], tstops = [[t1], [t2]])
         jsys = complete(jsys)
 
         jprob = JumpProblem(jsys, [X => 100, k => 0.1, t1 => 2.0, t2 => 6.0],
@@ -1380,6 +1381,7 @@ end
 
         @test jprob.prob isa DiscreteProblem
         @test haskey(jprob.kwargs, :tstops)
+        @test Set(jprob.kwargs[:tstops](jprob.prob.p, (0.0, 10.0))) == Set([2.0, 6.0])
 
         sol = solve(jprob, SSAStepper())
         @test SciMLBase.successful_retcode(sol)
@@ -1402,7 +1404,7 @@ end
         ev1 = (t == t1) => [X ~ Pre(X) + 1000]
         ev2 = (t == t1 + t2) => [X ~ Pre(X) + 2000]
         @named jsys = JumpSystem([vrj], t, [X], [k, t1, t2];
-            discrete_events = [ev1, ev2], tstops = [t1, t1 + t2])
+            discrete_events = [ev1, ev2], tstops = [[t1], [t1 + t2]])
         jsys = complete(jsys)
 
         jprob = JumpProblem(jsys, [X => 0, k => 1.0, t1 => 2.0, t2 => 3.0],
@@ -1413,6 +1415,7 @@ end
         @test jprob.kwargs[:tstops] isa MT.SymbolicTstops
         # tstops should NOT be in the inner raw ODEProblem's kwargs
         @test !haskey(jprob.prob.kwargs, :tstops)
+        @test Set(jprob.kwargs[:tstops](jprob.prob.p, (0.0, 8.0))) == Set([2.0, 5.0])
 
         sol = solve(jprob, Tsit5())
         @test SciMLBase.successful_retcode(sol)
@@ -1434,7 +1437,7 @@ end
         ev1 = (t == t1) => [X ~ Pre(X) + 100.0]
         ev2 = (t == t1 * t2) => [X ~ Pre(X) + 200.0]
         @mtkcompile jsys = System([eq], t, [X], [a, b, t1, t2]; jumps = [crj],
-            discrete_events = [ev1, ev2], tstops = [t1, t1 * t2])
+            discrete_events = [ev1, ev2], tstops = [[t1], [t1 * t2]])
 
         jprob = JumpProblem(jsys,
             [X => 10.0, a => 1.0, b => 0.01, t1 => 2.0, t2 => 3.0],
@@ -1445,6 +1448,7 @@ end
         @test haskey(jprob.kwargs, :tstops)
         @test jprob.kwargs[:tstops] isa MT.SymbolicTstops
         @test !haskey(jprob.prob.kwargs, :tstops)
+        @test Set(jprob.kwargs[:tstops](jprob.prob.p, (0.0, 10.0))) == Set([2.0, 6.0])
 
         sol = solve(jprob, Tsit5())
         @test SciMLBase.successful_retcode(sol)
@@ -1469,7 +1473,7 @@ end
         ev1 = (t == t1) => [X ~ Pre(X) + 100.0]
         ev2 = (t == t1 + t2) => [X ~ Pre(X) + 200.0]
         @mtkcompile jsys = System(eqs, t, [X], [k, σ_noise, t1, t2], [B]; jumps = [crj],
-            discrete_events = [ev1, ev2], tstops = [t1, t1 + t2])
+            discrete_events = [ev1, ev2], tstops = [[t1], [t1 + t2]])
 
         jprob = JumpProblem(jsys,
             [X => 10.0, k => 0.5, σ_noise => 0.01, t1 => 1.0, t2 => 2.0],
@@ -1480,15 +1484,53 @@ end
         @test haskey(jprob.kwargs, :tstops)
         @test jprob.kwargs[:tstops] isa MT.SymbolicTstops
         @test !haskey(jprob.prob.kwargs, :tstops)
+        @test Set(jprob.kwargs[:tstops](jprob.prob.p, (0.0, 5.0))) == Set([1.0, 3.0])
 
         # Uncomment once StochasticDiffEq forwards JumpProblem callbacks and handles
-        # callable tstops at t0:
+        # callable tstops:
         # sol = solve(jprob, SOSRI())
         # @test SciMLBase.successful_retcode(sol)
         #
         # # Events at t1=1.0 and t1+t2=3.0 should fire
         # @test sol(1.0 + 0.001; idxs = X) - sol(1.0 - 0.001; idxs = X) ≈ 100.0 atol = 2
         # @test sol(3.0 + 0.001; idxs = X) - sol(3.0 - 0.001; idxs = X) ≈ 200.0 atol = 2
+    end
+
+    # Test scalar (periodic) and mixed tstops forms
+    @testset "Periodic scalar tstops" begin
+        @variables X(t)
+        @parameters k t1
+        crj = ConstantRateJump(k, [X ~ Pre(X) - 1])
+        ev = (t == t1) => [X ~ Pre(X) + 500]
+        # Scalar tstop t1 → periodic range tspan[1]:t1:tspan[2]
+        @named jsys = JumpSystem([crj], t, [X], [k, t1];
+            discrete_events = [ev], tstops = [t1])
+        jsys = complete(jsys)
+
+        jprob = JumpProblem(jsys, [X => 100, k => 0.1, t1 => 3.0],
+            (0.0, 10.0); aggregator = Direct(), rng)
+
+        tstop_vals = jprob.kwargs[:tstops](jprob.prob.p, (0.0, 10.0))
+        @test Set(tstop_vals) == Set(0.0:3.0:10.0)
+    end
+
+    @testset "Mixed scalar and array tstops" begin
+        @variables X(t)
+        @parameters k t1 t2
+        crj = ConstantRateJump(k, [X ~ Pre(X) - 1])
+        ev1 = (t == t1) => [X ~ Pre(X) + 500]
+        ev2 = (t == t2) => [X ~ Pre(X) + 500]
+        # t1 as scalar (periodic range), [t2] as array (exact time)
+        @named jsys = JumpSystem([crj], t, [X], [k, t1, t2];
+            discrete_events = [ev1, ev2], tstops = [t1, [t2]])
+        jsys = complete(jsys)
+
+        jprob = JumpProblem(jsys, [X => 100, k => 0.1, t1 => 2.0, t2 => 5.0],
+            (0.0, 10.0); aggregator = Direct(), rng)
+
+        tstop_vals = jprob.kwargs[:tstops](jprob.prob.p, (0.0, 10.0))
+        # t1=2.0 periodic → 0:2:10, t2=5.0 exact → [5.0]
+        @test Set(tstop_vals) == Set(vcat(collect(0.0:2.0:10.0), 5.0))
     end
 
     # Test that systems with no tstops don't break anything

@@ -1117,7 +1117,7 @@ end
     ev1 = (tt == t1) => [X ~ Pre(X) + 50.0]
     ev2 = (tt == t1 * t2) => [X ~ Pre(X) + 100.0]
     @mtkcompile sys = System(eqs, tt, [X], [k, σ_noise, t1, t2], [B];
-        discrete_events = [ev1, ev2], tstops = [t1, t1 * t2])
+        discrete_events = [ev1, ev2], tstops = [[t1], [t1 * t2]])
 
     sprob = SDEProblem(sys,
         [X => 0.0, k => 1.0, σ_noise => 0.01, t1 => 2.0, t2 => 3.0],
@@ -1125,9 +1125,10 @@ end
 
     @test haskey(sprob.kwargs, :tstops)
     @test sprob.kwargs[:tstops] isa ModelingToolkitBase.SymbolicTstops
+    @test Set(sprob.kwargs[:tstops](sprob.p, (0.0, 10.0))) == Set([2.0, 6.0])
 
     # Uncomment once StochasticDiffEq handles callable tstops/callbacks in SDEProblem
-    # kwargs and handles callable tstops at t0:
+    # kwargs:
     # sol = solve(sprob, SOSRI())
     # @test SciMLBase.successful_retcode(sol)
     #
