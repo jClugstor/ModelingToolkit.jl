@@ -190,3 +190,10 @@ end
         @test SciMLBase.successful_retcode(sol)
     end
 end
+
+@testset "Product of unknowns in system" begin
+    @variables x y
+    @named sys = System([0 ~ x * y + 1, 0 ~ 2x + 3y - 2])
+    sys = complete(sys)
+    @test_throws ModelingToolkitBase.NotAffineError ModelingToolkitBase.calculate_A_b(sys)
+end
