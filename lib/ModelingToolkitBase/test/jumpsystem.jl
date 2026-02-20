@@ -1341,9 +1341,8 @@ end
         crj = ConstantRateJump(k, [X ~ Pre(X) - 1])
         ev1 = (t == t1) => [X ~ Pre(X) + 1000]
         ev2 = (t == t1 + t2) => [X ~ Pre(X) + 2000]
-        @named jsys = JumpSystem([crj], t, [X], [k, t1, t2];
+        @mtkcompile jsys = System(Equation[], t, [X], [k, t1, t2]; jumps = [crj],
             discrete_events = [ev1, ev2], tstops = [[t1], [t1 + t2]])
-        jsys = complete(jsys)
 
         jprob = JumpProblem(jsys, [X => 100, k => 0.1, t1 => 3.0, t2 => 4.0],
             (0.0, 10.0); aggregator = Direct(), rng)
@@ -1372,9 +1371,8 @@ end
         maj = MassActionJump(k, [X => 1], [X => -1])
         ev1 = (t == t1) => [X ~ Pre(X) + 500]
         ev2 = (t == t2) => [X ~ Pre(X) + 500]
-        @named jsys = JumpSystem([maj], t, [X], [k, t1, t2];
+        @mtkcompile jsys = System(Equation[], t, [X], [k, t1, t2]; jumps = [maj],
             discrete_events = [ev1, ev2], tstops = [[t1], [t2]])
-        jsys = complete(jsys)
 
         jprob = JumpProblem(jsys, [X => 100, k => 0.1, t1 => 2.0, t2 => 6.0],
             (0.0, 10.0); aggregator = Direct(), rng)
@@ -1403,9 +1401,8 @@ end
         vrj = VariableRateJump(k * (1 + sin(t)), [X ~ Pre(X) + 1])
         ev1 = (t == t1) => [X ~ Pre(X) + 1000]
         ev2 = (t == t1 + t2) => [X ~ Pre(X) + 2000]
-        @named jsys = JumpSystem([vrj], t, [X], [k, t1, t2];
+        @mtkcompile jsys = System(Equation[], t, [X], [k, t1, t2]; jumps = [vrj],
             discrete_events = [ev1, ev2], tstops = [[t1], [t1 + t2]])
-        jsys = complete(jsys)
 
         jprob = JumpProblem(jsys, [X => 0, k => 1.0, t1 => 2.0, t2 => 3.0],
             (0.0, 8.0); rng)
@@ -1495,17 +1492,34 @@ end
         @variables X(t)
         @parameters k t1
         crj = ConstantRateJump(k, [X ~ Pre(X) - 1])
-        ev = (t == t1) => [X ~ Pre(X) + 500]
+        # Events at t1, 2*t1, 3*t1 with distinct effects to verify periodicity
+        ev1 = (t == t1) => [X ~ Pre(X) + 100]
+        ev2 = (t == 2 * t1) => [X ~ Pre(X) + 200]
+        ev3 = (t == 3 * t1) => [X ~ Pre(X) + 300]
         # Scalar tstop t1 → periodic range tspan[1]:t1:tspan[2]
-        @named jsys = JumpSystem([crj], t, [X], [k, t1];
-            discrete_events = [ev], tstops = [t1])
-        jsys = complete(jsys)
+        @mtkcompile jsys = System(Equation[], t, [X], [k, t1]; jumps = [crj],
+            discrete_events = [ev1, ev2, ev3], tstops = [t1])
 
-        jprob = JumpProblem(jsys, [X => 100, k => 0.1, t1 => 3.0],
+        jprob = JumpProblem(jsys, [X => 1000, k => 0.1, t1 => 3.0],
             (0.0, 10.0); aggregator = Direct(), rng)
 
         tstop_vals = jprob.kwargs[:tstops](jprob.prob.p, (0.0, 10.0))
         @test Set(tstop_vals) == Set(0.0:3.0:10.0)
+
+        sol = solve(jprob, SSAStepper())
+        @test SciMLBase.successful_retcode(sol)
+
+        # No event should fire at tspan[1]=0.0
+        idx0 = findlast(==(0.0), sol.t)
+        @test sol[X][idx0] == 1000
+
+        # Events should fire at t=3.0 (+100), t=6.0 (+200), t=9.0 (+300)
+        idx3 = findlast(==(3.0), sol.t)
+        @test sol[X][idx3] - sol[X][idx3 - 1] == 100
+        idx6 = findlast(==(6.0), sol.t)
+        @test sol[X][idx6] - sol[X][idx6 - 1] == 200
+        idx9 = findlast(==(9.0), sol.t)
+        @test sol[X][idx9] - sol[X][idx9 - 1] == 300
     end
 
     @testset "Mixed scalar and array tstops" begin
@@ -1513,18 +1527,31 @@ end
         @parameters k t1 t2
         crj = ConstantRateJump(k, [X ~ Pre(X) - 1])
         ev1 = (t == t1) => [X ~ Pre(X) + 500]
-        ev2 = (t == t2) => [X ~ Pre(X) + 500]
+        ev2 = (t == t2) => [X ~ Pre(X) + 700]
         # t1 as scalar (periodic range), [t2] as array (exact time)
-        @named jsys = JumpSystem([crj], t, [X], [k, t1, t2];
+        @mtkcompile jsys = System(Equation[], t, [X], [k, t1, t2]; jumps = [crj],
             discrete_events = [ev1, ev2], tstops = [t1, [t2]])
-        jsys = complete(jsys)
 
-        jprob = JumpProblem(jsys, [X => 100, k => 0.1, t1 => 2.0, t2 => 5.0],
+        jprob = JumpProblem(jsys, [X => 1000, k => 0.1, t1 => 2.0, t2 => 5.0],
             (0.0, 10.0); aggregator = Direct(), rng)
 
         tstop_vals = jprob.kwargs[:tstops](jprob.prob.p, (0.0, 10.0))
         # t1=2.0 periodic → 0:2:10, t2=5.0 exact → [5.0]
         @test Set(tstop_vals) == Set(vcat(collect(0.0:2.0:10.0), 5.0))
+
+        sol = solve(jprob, SSAStepper())
+        @test SciMLBase.successful_retcode(sol)
+
+        # No event should fire at tspan[1]=0.0
+        idx0 = findlast(==(0.0), sol.t)
+        @test sol[X][idx0] == 1000
+
+        # Event at t==t1=2.0 should fire (periodic tstop hits t=2.0)
+        idx2 = findlast(==(2.0), sol.t)
+        @test sol[X][idx2] - sol[X][idx2 - 1] == 500
+        # Event at t==t2=5.0 should fire (array tstop exact time)
+        idx5 = findlast(==(5.0), sol.t)
+        @test sol[X][idx5] - sol[X][idx5 - 1] == 700
     end
 
     # User-provided tstops should error with a clear message
@@ -1532,11 +1559,12 @@ end
         @variables X(t)
         @parameters k
         crj = ConstantRateJump(k, [X ~ Pre(X) - 1])
-        @named jsys = JumpSystem([crj], t, [X], [k])
-        jsys = complete(jsys)
+        @mtkcompile jsys = System(Equation[], t, [X], [k]; jumps = [crj])
 
-        @test_throws ArgumentError JumpProblem(jsys, [X => 100, k => 1.0], (0.0, 10.0);
+        err = @test_throws ArgumentError JumpProblem(jsys, [X => 100, k => 1.0], (0.0, 10.0);
             aggregator = Direct(), rng, tstops = [1.0, 2.0])
+        @test contains(err.value.msg,
+            "Passing `tstops` directly to `JumpProblem(::System, ...)` is not supported")
     end
 
     # Test that systems with no tstops don't break anything
@@ -1544,8 +1572,7 @@ end
         @variables X(t)
         @parameters k
         crj = ConstantRateJump(k, [X ~ Pre(X) - 1])
-        @named jsys = JumpSystem([crj], t, [X], [k])
-        jsys = complete(jsys)
+        @mtkcompile jsys = System(Equation[], t, [X], [k]; jumps = [crj])
 
         jprob = JumpProblem(jsys, [X => 100, k => 1.0], (0.0, 10.0);
             aggregator = Direct(), rng)

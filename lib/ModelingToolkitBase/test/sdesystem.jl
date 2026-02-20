@@ -1131,6 +1131,31 @@ end
     @test sol(6.0 + 0.001; idxs = X) - sol(6.0 - 0.001; idxs = X) ≈ 100.0 atol = 2
 end
 
+# Periodic scalar tstops include tspan[1], which triggers StochasticDiffEq's DtLessThanMin
+# bug (modify_dt_for_tstops! sets dt=0 when a callable tstop equals tspan[1]).
+# This test is expected to fail until the upstream StochasticDiffEq fix lands.
+@testset "Periodic scalar tstops on pure SDE (expected failure)" begin
+    @variables X(tt)
+    @parameters k σ_noise t1
+    @brownians B
+    eqs = [D(X) ~ k + σ_noise * B]
+    ev = (tt == t1) => [X ~ Pre(X) + 50.0]
+    # Scalar tstop t1 → periodic range tspan[1]:t1:tspan[2] (includes tspan[1])
+    @mtkcompile sys = System(eqs, tt, [X], [k, σ_noise, t1], [B];
+        discrete_events = [ev], tstops = [t1])
+
+    sprob = SDEProblem(sys,
+        [X => 0.0, k => 1.0, σ_noise => 0.01, t1 => 3.0],
+        (0.0, 10.0))
+
+    @test haskey(sprob.kwargs, :tstops)
+    @test sprob.kwargs[:tstops] isa ModelingToolkitBase.SymbolicTstops
+    @test Set(sprob.kwargs[:tstops](sprob.p, (0.0, 10.0))) == Set(0.0:3.0:10.0)
+
+    # solve fails with DtLessThanMin because periodic tstops include tspan[1]=0.0
+    @test_broken (sol = solve(sprob, SOSRI()); SciMLBase.successful_retcode(sol))
+end
+
 if !@isdefined(ModelingToolkit)
     @testset "MTKBase `mtkcompile` creates appropriately sized `noise_eqs`" begin
         @variables X(t) A(t)
