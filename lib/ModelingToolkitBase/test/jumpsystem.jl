@@ -1460,10 +1460,6 @@ end
 
     # Path 1: SDEs + jumps → MTK SDEProblem (tstops created at JumpProblem level)
     # Multiple tstops with multi-parameter expression
-    # NOTE: Event firing verification requires StochasticDiffEq's __solve for JumpProblems
-    # to properly forward callbacks via merge_problem_kwargs, and a fix for tstops at t0
-    # causing DtLessThanMin. Once those are fixed upstream, uncomment the solve + event
-    # verification tests below.
     @testset "SDEs + jumps with symbolic tstops" begin
         @variables X(t)
         @parameters k σ_noise t1 t2
@@ -1486,14 +1482,12 @@ end
         @test !haskey(jprob.prob.kwargs, :tstops)
         @test Set(jprob.kwargs[:tstops](jprob.prob.p, (0.0, 5.0))) == Set([1.0, 3.0])
 
-        # Uncomment once StochasticDiffEq forwards JumpProblem callbacks and handles
-        # callable tstops:
-        # sol = solve(jprob, SOSRI())
-        # @test SciMLBase.successful_retcode(sol)
-        #
-        # # Events at t1=1.0 and t1+t2=3.0 should fire
-        # @test sol(1.0 + 0.001; idxs = X) - sol(1.0 - 0.001; idxs = X) ≈ 100.0 atol = 2
-        # @test sol(3.0 + 0.001; idxs = X) - sol(3.0 - 0.001; idxs = X) ≈ 200.0 atol = 2
+        sol = solve(jprob, SOSRI())
+        @test SciMLBase.successful_retcode(sol)
+
+        # Events at t1=1.0 and t1+t2=3.0 should fire
+        @test sol(1.0 + 0.001; idxs = X) - sol(1.0 - 0.001; idxs = X) ≈ 100.0 atol = 2
+        @test sol(3.0 + 0.001; idxs = X) - sol(3.0 - 0.001; idxs = X) ≈ 200.0 atol = 2
     end
 
     # Test scalar (periodic) and mixed tstops forms
@@ -1531,6 +1525,18 @@ end
         tstop_vals = jprob.kwargs[:tstops](jprob.prob.p, (0.0, 10.0))
         # t1=2.0 periodic → 0:2:10, t2=5.0 exact → [5.0]
         @test Set(tstop_vals) == Set(vcat(collect(0.0:2.0:10.0), 5.0))
+    end
+
+    # User-provided tstops should error with a clear message
+    @testset "User-provided tstops error" begin
+        @variables X(t)
+        @parameters k
+        crj = ConstantRateJump(k, [X ~ Pre(X) - 1])
+        @named jsys = JumpSystem([crj], t, [X], [k])
+        jsys = complete(jsys)
+
+        @test_throws ArgumentError JumpProblem(jsys, [X => 100, k => 1.0], (0.0, 10.0);
+            aggregator = Direct(), rng, tstops = [1.0, 2.0])
     end
 
     # Test that systems with no tstops don't break anything
