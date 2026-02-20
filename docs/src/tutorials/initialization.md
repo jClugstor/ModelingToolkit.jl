@@ -74,10 +74,11 @@ constructor either. The exception is solvable parameters, which have a binding o
 Solving for parameter values is covered in more detail in a later section.
 
 ```@repl init
-ODEProblem(sys, [], (0.0, 1.0)) # fine
-ODEProblem(sys, [x => 2, p => 2.5]) # fine
-@test_throws Exception ODEProblem(sys, [y => 1]) # errors
-@test_throws Exception ODEProblem(sys, [q => 2]) # errors
+tspan = (0.0, 1.0)
+ODEProblem(sys, [], tspan) # fine
+ODEProblem(sys, [x => 2, p => 2.5], tspan) # fine
+@test_throws Exception ODEProblem(sys, [y => 1], tspan) # errors
+@test_throws Exception ODEProblem(sys, [q => 2], tspan) # errors
 ```
 
 Bindings and initial conditions should not be cyclic. In other words, the binding or
