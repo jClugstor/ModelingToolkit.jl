@@ -1358,6 +1358,10 @@ struct CachedLinearAb
     b::Vector{SymbolicT}
 end
 
+function should_invalidate_mutable_cache_entry(::Type{CachedLinearAb}, patch::NamedTuple)
+    return haskey(patch, :eqs) || haskey(patch, :observed) || haskey(patch, :unknowns)
+end
+
 struct NotAffineError <: Exception
     rhs::SymbolicT
     var::SymbolicT
@@ -1384,8 +1388,7 @@ Return matrix `A` and vector `b` such that the system `sys` can be represented a
 - `throw`: whether to throw an error if the system is not affine.
 """
 function calculate_A_b(sys::System; sparse = false, throw = true)
-    cache = getmetadata(sys, MutableCacheKey, nothing)::MutableCacheT
-    cached_ab = get(cache, CachedLinearAb, nothing)
+    cached_ab = check_mutable_cache(sys, CachedLinearAb, Union{CachedLinearAb, NotAffineError}, nothing)
     if cached_ab isa CachedLinearAb
         return sparse ? SparseArrays.sparse(cached_ab.A) : cached_ab.A, cached_ab.b
     elseif cached_ab isa NotAffineError
@@ -1413,7 +1416,7 @@ function calculate_A_b(sys::System; sparse = false, throw = true)
             p, q, islinear = lex(resid)
             if !islinear
                 err = NotAffineError(fulleqs[i].rhs, var)
-                cache[CachedLinearAb] = err
+                store_to_mutable_cache!(sys, CachedLinearAb, err)
                 throw || return nothing
                 Base.throw(err)
             end
@@ -1429,7 +1432,7 @@ function calculate_A_b(sys::System; sparse = false, throw = true)
     @assert all(Base.Fix1(isassigned, A), eachindex(A))
     @assert all(Base.Fix1(isassigned, A), eachindex(b))
 
-    cache[CachedLinearAb] = CachedLinearAb(A, b)
+    store_to_mutable_cache!(sys, CachedLinearAb, CachedLinearAb(A, b))
     if sparse
         A = SparseArrays.sparse(A)
     end

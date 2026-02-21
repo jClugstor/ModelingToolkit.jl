@@ -1175,6 +1175,10 @@ end
 
 abstract type ObservedGraphCacheKey end
 
+function should_invalidate_mutable_cache_entry(::Type{ObservedGraphCacheKey}, patch::NamedTuple)
+    return haskey(patch, :observed)
+end
+
 struct ObservedGraphCache
     graph::DiCMOBiGraph{
         false, Int, BipartiteGraph{Int, Nothing},
@@ -1219,10 +1223,12 @@ function observed_equations_used_by(
     end
     if iscomplete(sys) && obs == observed(sys)
         cache = getmetadata(sys, MutableCacheKey, nothing)
-        obs_graph_cache = get!(cache, ObservedGraphCacheKey) do
+        obs_graph_cache = check_mutable_cache(sys, ObservedGraphCacheKey, ObservedGraphCache, nothing)
+        if obs_graph_cache === nothing
             obsvar_to_idx = Dict{Any, Int}([eq.lhs => i for (i, eq) in enumerate(obs)])
             graph = observed_dependency_graph(obs)
-            return ObservedGraphCache(graph, obsvar_to_idx)
+            obs_graph_cache = ObservedGraphCache(graph, obsvar_to_idx)
+            store_to_mutable_cache!(sys, ObservedGraphCacheKey, obs_graph_cache)
         end
         @unpack obsvar_to_idx, graph = obs_graph_cache
     else
