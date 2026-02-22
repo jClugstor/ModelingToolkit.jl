@@ -352,6 +352,15 @@ for prop in [SYS_PROPS; [:continuous_events, :discrete_events]]
     @eval @public $getter, $hasfn
 end
 
+# AbstractSystem types should be treated as inactive (constant) for Enzyme.
+# Property access on systems retrieves symbolic metadata, not numerical values.
+import EnzymeCore
+function EnzymeCore.EnzymeRules.inactive_noinl(
+        ::typeof(Base.getproperty), ::AbstractSystem, ::Symbol,
+    )
+    return true
+end
+
 function __init__()
     SU.hashcons(unwrap(t_nounits), true)
     SU.hashcons(COMMON_NOTHING, true)
