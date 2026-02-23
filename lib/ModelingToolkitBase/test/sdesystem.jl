@@ -1131,16 +1131,17 @@ end
     @test sol(6.0 + 0.001; idxs = X) - sol(6.0 - 0.001; idxs = X) ≈ 100.0 atol = 2
 end
 
-# Periodic scalar tstops include tspan[1], which triggers StochasticDiffEq's DtLessThanMin
-# bug (modify_dt_for_tstops! sets dt=0 when a callable tstop equals tspan[1]).
-# This test is expected to fail until the upstream StochasticDiffEq fix lands.
-@testset "Periodic scalar tstops on pure SDE (expected failure)" begin
+# Periodic scalar tstops on pure SDE with a symbolic periodic condition.
+# Verifies that scalar tstops exclude tspan[1] (consistent with PeriodicCallback)
+# and that the event fires at multiple periodic stops.
+@testset "Periodic scalar tstops on pure SDE" begin
     @variables X(tt)
     @parameters k σ_noise t1
     @brownians B
     eqs = [D(X) ~ k + σ_noise * B]
-    ev = (tt == t1) => [X ~ Pre(X) + 50.0]
-    # Scalar tstop t1 → periodic range tspan[1]:t1:tspan[2] (includes tspan[1])
+    # Single event with symbolic periodic condition: fires at every multiple of t1
+    ev = (mod(tt, t1) == 0) => [X ~ Pre(X) + 50.0]
+    # Scalar tstop t1 → periodic range (tspan[1]+t1):t1:tspan[2]
     @mtkcompile sys = System(eqs, tt, [X], [k, σ_noise, t1], [B];
         discrete_events = [ev], tstops = [t1])
 
@@ -1150,10 +1151,14 @@ end
 
     @test haskey(sprob.kwargs, :tstops)
     @test sprob.kwargs[:tstops] isa ModelingToolkitBase.SymbolicTstops
-    @test Set(sprob.kwargs[:tstops](sprob.p, (0.0, 10.0))) == Set(0.0:3.0:10.0)
+    @test Set(sprob.kwargs[:tstops](sprob.p, (0.0, 10.0))) == Set(3.0:3.0:10.0)
 
-    # solve fails with DtLessThanMin because periodic tstops include tspan[1]=0.0
-    @test_broken (sol = solve(sprob, SOSRI()); SciMLBase.successful_retcode(sol))
+    sol = solve(sprob, SOSRI())
+    @test SciMLBase.successful_retcode(sol)
+
+    # Periodic event should fire at t=3.0 and t=6.0 (+50 each time)
+    @test sol(3.0 + 0.001; idxs = X) - sol(3.0 - 0.001; idxs = X) ≈ 50.0 atol = 2
+    @test sol(6.0 + 0.001; idxs = X) - sol(6.0 - 0.001; idxs = X) ≈ 50.0 atol = 2
 end
 
 if !@isdefined(ModelingToolkit)
