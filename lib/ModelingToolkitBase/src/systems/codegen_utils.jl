@@ -28,6 +28,92 @@ function generated_argument_name(i::Int)
     return Symbol(:__mtk_arg_, i)
 end
 
+@inline function compute_array_variable_buffer_idxs(args; ignore_vars = Set{SymbolicT}())
+    # map array symbolic to an identically sized array where each element is (buffer_idx, idx_in_buffer)
+    var_to_arridxs = Dict{SymbolicT, Vector{Tuple{Int, Int}}}()
+    for (i, arg) in enumerate(args)
+        # filter out non-arrays
+        # any element of args which is not an array is assumed to not contain a
+        # scalarized array symbolic. This works because the only non-array element
+        # is the independent variable
+        arg isa Vector{SymbolicT} || continue
+
+        # go through symbolics
+        for (j, var) in enumerate(arg)
+            var = unwrap(var)
+            # filter out non-array-symbolics
+            arrvar, isarr = split_indexed_var(var)
+            isarr || continue
+            arrvar in ignore_vars && continue
+            # get and/or construct the buffer storing indexes
+            idxbuffer = get(var_to_arridxs, arrvar, nothing)
+            if idxbuffer === nothing
+                idxbuffer = map(Returns((0, 0)), SU.stable_eachindex(arrvar))
+            end
+            idxbuffer[SU.as_linear_idx(SU.shape(arrvar), get_stable_index(var))] = (i, j)
+            var_to_arridxs[arrvar] = idxbuffer
+        end
+    end
+
+    return var_to_arridxs
+end
+
+function array_variable_buffer_idxs_to_assignments(var_to_arridxs::Dict{SymbolicT, Vector{Tuple{Int, Int}}}; argument_name = generated_argument_name, buffer_offset = 0)
+    assignments = Assignment[]
+    for (arrvar, idxs) in var_to_arridxs
+        # all elements of the array need to be present in `args` to form the
+        # reconstructing assignment
+        any(iszero ∘ first, idxs) && continue
+
+        var_size_expr = Expr(:tuple)
+        sharrvar = SU.shape(arrvar)
+        for ax in sharrvar
+            push!(var_size_expr.args, length(ax))
+        end
+
+        # if they are all in the same buffer, we can take a shortcut and `view` into it
+        if allequal(Iterators.map(first, idxs))
+            buffer_idx = first(first(idxs)) + buffer_offset
+            idxs = map(last, idxs)
+            shape = SU.ShapeVecT((1:length(idxs),))
+            # if all the elements are contiguous and ordered, turn the array of indexes into a range
+            # to help reduce allocations
+            if first(idxs) < last(idxs) && vec(idxs) == first(idxs):last(idxs)
+                expr = Expr(:call, view, argument_name(buffer_idx), first(idxs):last(idxs))
+            elseif vec(idxs) == first(idxs):-1:last(idxs)
+                expr = Expr(:call, view, argument_name(buffer_idx), first(idxs):-1:last(idxs))
+            elseif length(idxs) <= 16
+                expr = Expr(:call, SVector)
+                append!(expr.args, idxs)
+                expr = Expr(:call, view, argument_name(buffer_idx), expr)
+            else
+                expr = Expr(:call, view, argument_name(buffer_idx), idxs)
+            end
+        else
+            if length(idxs) <= 16
+                expr = Expr(:call, SVector)
+            else
+                expr = Expr(:vect)
+            end
+            for idx in idxs
+                i, j = idx
+                push!(expr.args, Expr(:ref, argument_name(i), j))
+            end
+        end
+        expr = Expr(:call, reshape, expr, var_size_expr)
+        if any(!isone ∘ first, sharrvar)
+            expr_origin = Expr(:call, Origin)
+            for ax in sharrvar
+                push!(expr_origin.args, first(ax))
+            end
+            expr = Expr(:call, expr_origin, expr)
+        end
+        push!(assignments, Assignment(arrvar, expr))
+    end
+
+    return assignments
+end
+
 """
     $(TYPEDSIGNATURES)
 
@@ -40,75 +126,9 @@ reconstruct array variables if they are present scalarized in `args`.
   an argument to the generated function and returns the name of the argument in the
   generated function.
 """
-function array_variable_assignments(args...; argument_name = generated_argument_name)
-    # map array symbolic to an identically sized array where each element is (buffer_idx, idx_in_buffer)
-    var_to_arridxs = Dict{SymbolicT, Vector{Tuple{Int, Int}}}()
-    for (i, arg) in enumerate(args)
-        # filter out non-arrays
-        # any element of args which is not an array is assumed to not contain a
-        # scalarized array symbolic. This works because the only non-array element
-        # is the independent variable
-        symbolic_type(arg) == NotSymbolic() || continue
-        arg isa AbstractArray || continue
-
-        # go through symbolics
-        for (j, var) in enumerate(arg)
-            var = unwrap(var)
-            # filter out non-array-symbolics
-            arrvar, isarr = split_indexed_var(var)
-            isarr || continue
-            # get and/or construct the buffer storing indexes
-            idxbuffer = get!(
-                () -> map(Returns((0, 0)), SU.stable_eachindex(arrvar)), var_to_arridxs, arrvar
-            )
-            idxbuffer[SU.as_linear_idx(SU.shape(arrvar), get_stable_index(var))] = (i, j)
-        end
-    end
-
-    assignments = Assignment[]
-    for (arrvar, idxs) in var_to_arridxs
-        # all elements of the array need to be present in `args` to form the
-        # reconstructing assignment
-        any(iszero ∘ first, idxs) && continue
-
-        # if they are all in the same buffer, we can take a shortcut and `view` into it
-        if allequal(Iterators.map(first, idxs))
-            buffer_idx = first(first(idxs))
-            idxs = map(last, idxs)
-            # if all the elements are contiguous and ordered, turn the array of indexes into a range
-            # to help reduce allocations
-            if first(idxs) < last(idxs) && vec(idxs) == first(idxs):last(idxs)
-                idxs = first(idxs):last(idxs)
-            elseif vec(idxs) == first(idxs):-1:last(idxs)
-                idxs = first(idxs):-1:last(idxs)
-            else
-                # Otherwise, turn the indexes into an `SArray` so they're stack-allocated
-                idxs = SArray{Tuple{size(idxs)...}}(idxs)
-            end
-            # view and reshape
-
-            expr = term(
-                reshape, term(view, argument_name(buffer_idx), idxs),
-                size(arrvar)
-            )
-        else
-            elems = map(idxs) do idx
-                i, j = idx
-                term(getindex, argument_name(i), j; type = Real, shape = SU.ShapeVecT())
-            end
-            # use `MakeArray` syntax and generate a stack-allocated array
-            expr = term(
-                SymbolicUtils.Code.create_array, SArray, nothing,
-                Val(ndims(arrvar)), Val(length(arrvar)), elems...
-            )
-        end
-        if any(x -> !isone(first(x)), axes(arrvar))
-            expr = term(Origin(first.(axes(arrvar))...), expr)
-        end
-        push!(assignments, arrvar ← expr)
-    end
-
-    return assignments
+function array_variable_assignments(args...; ignore_vars = Set{SymbolicT}(), argument_name = generated_argument_name, buffer_offset = 0)
+    var_to_arridxs = compute_array_variable_buffer_idxs(args; ignore_vars)
+    return array_variable_buffer_idxs_to_assignments(var_to_arridxs; argument_name, buffer_offset)
 end
 
 """
@@ -201,6 +221,14 @@ function __search_dervars_recurse(x::SymbolicT)
     end
 end
 
+struct ParameterArrayAssignments
+    var_to_arridxs::Dict{SymbolicT, Vector{Tuple{Int, Int}}}
+end
+
+function should_invalidate_mutable_cache_entry(::Type{ParameterArrayAssignments}, patch::NamedTuple)
+    return haskey(patch, :ps)
+end
+
 """
     $(TYPEDSIGNATURES)
 
@@ -249,6 +277,7 @@ All other keyword arguments are forwarded to `build_function`.
 Base.@nospecializeinfer function build_function_wrapper(
         sys::AbstractSystem, @nospecialize(expr), @nospecialize(args...); p_start = 2,
         p_end = is_time_dependent(sys) ? length(args) - 1 : length(args),
+        non_standard_param_layout = false,
         wrap_delays = is_dde(sys), histfn = DDE_HISTORY_FUN, histfn_symbolic = histfn, wrap_code = identity,
         add_observed = true, filter_observed = Returns(true),
         create_bindings = false, output_type = nothing, mkarray = nothing,
@@ -316,7 +345,20 @@ Base.@nospecializeinfer function build_function_wrapper(
     bound_parameters_used_by!(reqd_bound_pars, sys, extra_assignments; bgraph)
     sort_bound_parameters!(reqd_bound_pars, sys; bgraph)
     # assignments for reconstructing scalarized array symbolics
-    assignments = array_variable_assignments(args...)
+    if non_standard_param_layout
+        assignments = array_variable_assignments(args...)
+    else
+        cached = check_mutable_cache(sys, ParameterArrayAssignments, ParameterArrayAssignments, nothing)
+        if cached isa ParameterArrayAssignments
+            param_var_to_arridxs = cached.var_to_arridxs
+        else
+            param_var_to_arridxs = compute_array_variable_buffer_idxs(args[p_start:p_end])
+            store_to_mutable_cache!(sys, ParameterArrayAssignments, ParameterArrayAssignments(param_var_to_arridxs))
+        end
+        assignments = array_variable_buffer_idxs_to_assignments(param_var_to_arridxs; buffer_offset = p_start - 1)
+        other_assigns = array_variable_assignments(args...; ignore_vars = keys(param_var_to_arridxs))
+        append!(assignments, other_assigns)
+    end
     binds = bindings(sys)
     for p in reqd_bound_pars
         push!(assignments, p ← binds[p])
