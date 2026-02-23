@@ -1408,13 +1408,16 @@ function calculate_A_b(sys::System; sparse = false, throw = true)
     dvs = unknowns(sys)
     A = Matrix{SymbolicT}(undef, length(rhss), length(dvs))
     b = Vector{SymbolicT}(undef, length(rhss))
+    query_predicate = in(Set{SymbolicT}(dvs))
     # `linear_expansion` caches values based on `var`. This loop ordering helps
     # avoid invalidating the cache frequently.
     for (j, var) in enumerate(dvs)
         lex = Symbolics.LinearExpander(var; strict = true)
         for (i, resid) in enumerate(rhss)
             p, q, islinear = lex(resid)
-            if !islinear
+            # An equation such as `0 ~ 1 + x * y` will return `(x, 1, true)` for `y`.
+            # Check that `p` doesn't contain unknowns to avoid this.
+            if !islinear || SU.query(query_predicate, p)
                 err = NotAffineError(fulleqs[i].rhs, var)
                 store_to_mutable_cache!(sys, CachedLinearAb, err)
                 throw || return nothing
