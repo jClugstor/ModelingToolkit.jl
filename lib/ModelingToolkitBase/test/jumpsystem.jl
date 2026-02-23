@@ -1328,3 +1328,249 @@ end
         @test X_at_1 < 28.0  # Should not fire twice (same check as Issue#4216)
     end
 end
+
+# Test that SymbolicTstops are created and forwarded correctly for JumpProblems.
+# Covers all inner-problem paths: pure jumps (DiscreteProblem), VRJ-only (raw ODEProblem),
+# jumps+ODEs (MTK ODEProblem).
+@testset "Symbolic tstops with JumpProblems" begin
+    # Path 4: Pure jumps (CRJ) → DiscreteProblem + SSAStepper
+    # Multiple tstops including a multi-parameter expression
+    @testset "Pure CRJ with symbolic tstops" begin
+        @variables X(t)
+        @parameters k t1 t2
+        crj = ConstantRateJump(k, [X ~ Pre(X) - 1])
+        ev1 = (t == t1) => [X ~ Pre(X) + 1000]
+        ev2 = (t == t1 + t2) => [X ~ Pre(X) + 2000]
+        @mtkcompile jsys = System(Equation[], t, [X], [k, t1, t2]; jumps = [crj],
+            discrete_events = [ev1, ev2], tstops = [[t1], [t1 + t2]])
+
+        jprob = JumpProblem(jsys, [X => 100, k => 0.1, t1 => 3.0, t2 => 4.0],
+            (0.0, 10.0); aggregator = Direct(), rng)
+
+        @test jprob.prob isa DiscreteProblem
+        @test haskey(jprob.kwargs, :tstops)
+        @test jprob.kwargs[:tstops] isa MT.SymbolicTstops
+        @test Set(jprob.kwargs[:tstops](jprob.prob.p, (0.0, 10.0))) == Set([3.0, 7.0])
+
+        sol = solve(jprob, SSAStepper())
+        @test SciMLBase.successful_retcode(sol)
+        @test 3.0 ∈ sol.t
+        @test 7.0 ∈ sol.t
+
+        # Check the event effects by comparing X before and after each tstop
+        idx3 = findlast(==(3.0), sol.t)
+        @test sol[X][idx3] - sol[X][idx3 - 1] == 1000
+        idx7 = findlast(==(7.0), sol.t)
+        @test sol[X][idx7] - sol[X][idx7 - 1] == 2000
+    end
+
+    # Path 4: Pure jumps (MAJ) → DiscreteProblem + SSAStepper
+    @testset "Pure MAJ with symbolic tstops" begin
+        @variables X(t)
+        @parameters k t1 t2
+        maj = MassActionJump(k, [X => 1], [X => -1])
+        ev1 = (t == t1) => [X ~ Pre(X) + 500]
+        ev2 = (t == t2) => [X ~ Pre(X) + 500]
+        @mtkcompile jsys = System(Equation[], t, [X], [k, t1, t2]; jumps = [maj],
+            discrete_events = [ev1, ev2], tstops = [[t1], [t2]])
+
+        jprob = JumpProblem(jsys, [X => 100, k => 0.1, t1 => 2.0, t2 => 6.0],
+            (0.0, 10.0); aggregator = Direct(), rng)
+
+        @test jprob.prob isa DiscreteProblem
+        @test haskey(jprob.kwargs, :tstops)
+        @test Set(jprob.kwargs[:tstops](jprob.prob.p, (0.0, 10.0))) == Set([2.0, 6.0])
+
+        sol = solve(jprob, SSAStepper())
+        @test SciMLBase.successful_retcode(sol)
+        @test 2.0 ∈ sol.t
+        @test 6.0 ∈ sol.t
+
+        # Check the event effects by comparing X before and after each tstop
+        idx2 = findlast(==(2.0), sol.t)
+        @test sol[X][idx2] - sol[X][idx2 - 1] == 500
+        idx6 = findlast(==(6.0), sol.t)
+        @test sol[X][idx6] - sol[X][idx6 - 1] == 500
+    end
+
+    # Path 3: VRJ only (no ODEs) → raw ODEProblem, tstops forwarded via JumpProblem
+    # Multiple tstops with multi-parameter expression
+    @testset "VRJ only with symbolic tstops" begin
+        @variables X(t)
+        @parameters k t1 t2
+        vrj = VariableRateJump(k * (1 + sin(t)), [X ~ Pre(X) + 1])
+        ev1 = (t == t1) => [X ~ Pre(X) + 1000]
+        ev2 = (t == t1 + t2) => [X ~ Pre(X) + 2000]
+        @mtkcompile jsys = System(Equation[], t, [X], [k, t1, t2]; jumps = [vrj],
+            discrete_events = [ev1, ev2], tstops = [[t1], [t1 + t2]])
+
+        jprob = JumpProblem(jsys, [X => 0, k => 1.0, t1 => 2.0, t2 => 3.0],
+            (0.0, 8.0); rng)
+
+        @test jprob.prob isa ODEProblem
+        @test haskey(jprob.kwargs, :tstops)
+        @test jprob.kwargs[:tstops] isa MT.SymbolicTstops
+        # tstops should NOT be in the inner raw ODEProblem's kwargs
+        @test !haskey(jprob.prob.kwargs, :tstops)
+        @test Set(jprob.kwargs[:tstops](jprob.prob.p, (0.0, 8.0))) == Set([2.0, 5.0])
+
+        sol = solve(jprob, Tsit5())
+        @test SciMLBase.successful_retcode(sol)
+        @test 2.0 ∈ sol.t
+        @test 5.0 ∈ sol.t
+
+        # Check event effects via the jump in X across each tstop
+        @test sol(2.0 + 0.001; idxs = X) - sol(2.0 - 0.001; idxs = X) ≈ 1000 atol = 5
+        @test sol(5.0 + 0.001; idxs = X) - sol(5.0 - 0.001; idxs = X) ≈ 2000 atol = 5
+    end
+
+    # Path 2: ODEs + jumps → MTK ODEProblem (tstops created at JumpProblem level)
+    # Multiple tstops with multi-parameter expression
+    @testset "ODEs + jumps with symbolic tstops" begin
+        @variables X(t)
+        @parameters a b t1 t2
+        eq = D(X) ~ a
+        crj = ConstantRateJump(b, [X ~ Pre(X) - 1])
+        ev1 = (t == t1) => [X ~ Pre(X) + 100.0]
+        ev2 = (t == t1 * t2) => [X ~ Pre(X) + 200.0]
+        @mtkcompile jsys = System([eq], t, [X], [a, b, t1, t2]; jumps = [crj],
+            discrete_events = [ev1, ev2], tstops = [[t1], [t1 * t2]])
+
+        jprob = JumpProblem(jsys,
+            [X => 10.0, a => 1.0, b => 0.01, t1 => 2.0, t2 => 3.0],
+            (0.0, 10.0); rng)
+
+        @test jprob.prob isa ODEProblem
+        # tstops are created at JumpProblem level; inner problem has _skip_tstops
+        @test haskey(jprob.kwargs, :tstops)
+        @test jprob.kwargs[:tstops] isa MT.SymbolicTstops
+        @test !haskey(jprob.prob.kwargs, :tstops)
+        @test Set(jprob.kwargs[:tstops](jprob.prob.p, (0.0, 10.0))) == Set([2.0, 6.0])
+
+        sol = solve(jprob, Tsit5())
+        @test SciMLBase.successful_retcode(sol)
+
+        # Check event effects via the jump in X across each tstop
+        @test sol(2.0 + 0.001; idxs = X) - sol(2.0 - 0.001; idxs = X) ≈ 100.0 atol = 2
+        @test sol(6.0 + 0.001; idxs = X) - sol(6.0 - 0.001; idxs = X) ≈ 200.0 atol = 2
+    end
+
+    # Path 1: SDEs + jumps → MTK SDEProblem (tstops created at JumpProblem level)
+    # Multiple tstops with multi-parameter expression
+    @testset "SDEs + jumps with symbolic tstops" begin
+        @variables X(t)
+        @parameters k σ_noise t1 t2
+        @brownians B
+        eqs = [D(X) ~ k + σ_noise * B]
+        crj = ConstantRateJump(k, [X ~ Pre(X) - 1])
+        ev1 = (t == t1) => [X ~ Pre(X) + 100.0]
+        ev2 = (t == t1 + t2) => [X ~ Pre(X) + 200.0]
+        @mtkcompile jsys = System(eqs, t, [X], [k, σ_noise, t1, t2], [B]; jumps = [crj],
+            discrete_events = [ev1, ev2], tstops = [[t1], [t1 + t2]])
+
+        jprob = JumpProblem(jsys,
+            [X => 10.0, k => 0.5, σ_noise => 0.01, t1 => 1.0, t2 => 2.0],
+            (0.0, 5.0); rng)
+
+        @test jprob.prob isa SDEProblem
+        # tstops are created at JumpProblem level; inner problem has _skip_tstops
+        @test haskey(jprob.kwargs, :tstops)
+        @test jprob.kwargs[:tstops] isa MT.SymbolicTstops
+        @test !haskey(jprob.prob.kwargs, :tstops)
+        @test Set(jprob.kwargs[:tstops](jprob.prob.p, (0.0, 5.0))) == Set([1.0, 3.0])
+
+        sol = solve(jprob, SOSRI())
+        @test SciMLBase.successful_retcode(sol)
+
+        # Events at t1=1.0 and t1+t2=3.0 should fire
+        @test sol(1.0 + 0.001; idxs = X) - sol(1.0 - 0.001; idxs = X) ≈ 100.0 atol = 2
+        @test sol(3.0 + 0.001; idxs = X) - sol(3.0 - 0.001; idxs = X) ≈ 200.0 atol = 2
+    end
+
+    # Test scalar (periodic) and mixed tstops forms
+    @testset "Periodic scalar tstops" begin
+        @variables X(t)
+        @parameters k t1
+        crj = ConstantRateJump(k, [X ~ Pre(X) - 1])
+        # Events at t1, 2*t1, 3*t1 with distinct effects to verify periodicity
+        ev1 = (t == t1) => [X ~ Pre(X) + 100]
+        ev2 = (t == 2 * t1) => [X ~ Pre(X) + 200]
+        ev3 = (t == 3 * t1) => [X ~ Pre(X) + 300]
+        # Scalar tstop t1 → periodic range (tspan[1]+t1):t1:tspan[2]
+        @mtkcompile jsys = System(Equation[], t, [X], [k, t1]; jumps = [crj],
+            discrete_events = [ev1, ev2, ev3], tstops = [t1])
+
+        jprob = JumpProblem(jsys, [X => 1000, k => 0.1, t1 => 3.0],
+            (0.0, 10.0); aggregator = Direct(), rng)
+
+        tstop_vals = jprob.kwargs[:tstops](jprob.prob.p, (0.0, 10.0))
+        @test Set(tstop_vals) == Set(3.0:3.0:10.0)
+
+        sol = solve(jprob, SSAStepper())
+        @test SciMLBase.successful_retcode(sol)
+
+        # Events should fire at t=3.0 (+100), t=6.0 (+200), t=9.0 (+300)
+        idx3 = findlast(==(3.0), sol.t)
+        @test sol[X][idx3] - sol[X][idx3 - 1] == 100
+        idx6 = findlast(==(6.0), sol.t)
+        @test sol[X][idx6] - sol[X][idx6 - 1] == 200
+        idx9 = findlast(==(9.0), sol.t)
+        @test sol[X][idx9] - sol[X][idx9 - 1] == 300
+    end
+
+    @testset "Mixed scalar and array tstops" begin
+        @variables X(t)
+        @parameters k t1 t2
+        crj = ConstantRateJump(k, [X ~ Pre(X) - 1])
+        ev1 = (t == t1) => [X ~ Pre(X) + 500]
+        ev2 = (t == t2) => [X ~ Pre(X) + 700]
+        # t1 as scalar (periodic range), [t2] as array (exact time)
+        @mtkcompile jsys = System(Equation[], t, [X], [k, t1, t2]; jumps = [crj],
+            discrete_events = [ev1, ev2], tstops = [t1, [t2]])
+
+        jprob = JumpProblem(jsys, [X => 1000, k => 0.1, t1 => 2.0, t2 => 5.0],
+            (0.0, 10.0); aggregator = Direct(), rng)
+
+        tstop_vals = jprob.kwargs[:tstops](jprob.prob.p, (0.0, 10.0))
+        # t1=2.0 periodic → 2:2:10, t2=5.0 exact → [5.0]
+        @test Set(tstop_vals) == Set(vcat(collect(2.0:2.0:10.0), 5.0))
+
+        sol = solve(jprob, SSAStepper())
+        @test SciMLBase.successful_retcode(sol)
+
+        # Event at t==t1=2.0 should fire (periodic tstop hits t=2.0)
+        idx2 = findlast(==(2.0), sol.t)
+        @test sol[X][idx2] - sol[X][idx2 - 1] == 500
+        # Event at t==t2=5.0 should fire (array tstop exact time)
+        idx5 = findlast(==(5.0), sol.t)
+        @test sol[X][idx5] - sol[X][idx5 - 1] == 700
+    end
+
+    # User-provided tstops should error with a clear message
+    @testset "User-provided tstops error" begin
+        @variables X(t)
+        @parameters k
+        crj = ConstantRateJump(k, [X ~ Pre(X) - 1])
+        @mtkcompile jsys = System(Equation[], t, [X], [k]; jumps = [crj])
+
+        err = @test_throws ArgumentError JumpProblem(jsys, [X => 100, k => 1.0], (0.0, 10.0);
+            aggregator = Direct(), rng, tstops = [1.0, 2.0])
+        @test contains(err.value.msg,
+            "Passing `tstops` directly to `JumpProblem(::System, ...)` is not supported")
+    end
+
+    # Test that systems with no tstops don't break anything
+    @testset "No symbolic tstops (regression)" begin
+        @variables X(t)
+        @parameters k
+        crj = ConstantRateJump(k, [X ~ Pre(X) - 1])
+        @mtkcompile jsys = System(Equation[], t, [X], [k]; jumps = [crj])
+
+        jprob = JumpProblem(jsys, [X => 100, k => 1.0], (0.0, 10.0);
+            aggregator = Direct(), rng)
+        @test !haskey(jprob.kwargs, :tstops)
+
+        sol = solve(jprob, SSAStepper())
+        @test SciMLBase.successful_retcode(sol)
+    end
+end

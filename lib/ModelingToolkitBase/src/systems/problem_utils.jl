@@ -1705,7 +1705,7 @@ end
 function process_kwargs(
         sys::System; expression = Val{false}, callback = nothing,
         eval_expression = false, eval_module = @__MODULE__,
-        _skip_events = false, kwargs...
+        _skip_events = false, _skip_tstops = false, kwargs...
     )
     kwargs = filter_kwargs(kwargs)
     kwargs1 = (;)
@@ -1718,9 +1718,11 @@ function process_kwargs(
             end
         end
 
-        tstops = SymbolicTstops(sys; expression, eval_expression, eval_module)
-        if tstops !== nothing
-            kwargs1 = merge(kwargs1, (; tstops))
+        if !_skip_tstops
+            tstops = SymbolicTstops(sys; expression, eval_expression, eval_module)
+            if tstops !== nothing
+                kwargs1 = merge(kwargs1, (; tstops))
+            end
         end
     end
 
@@ -1760,7 +1762,7 @@ function SymbolicTstops(
         if is_array_of_symbolics(val) || val isa AbstractArray
             collect(val)
         else
-            term(:, t0, unwrap(val), t1; type = Vector{Real})
+            term(:, term(+, t0, unwrap(val)), unwrap(val), t1; type = Vector{Real})
         end
     end
     rps = reorder_parameters(sys)

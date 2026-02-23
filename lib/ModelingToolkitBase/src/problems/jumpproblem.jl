@@ -6,6 +6,11 @@
     ) where {iip, spec}
     check_complete(sys, JumpProblem)
     check_compatibility && check_compatible_system(JumpProblem, sys)
+    if haskey(kwargs, :tstops)
+        throw(ArgumentError(
+            "Passing `tstops` directly to `JumpProblem(::System, ...)` is not supported. " *
+            "Define tstops on the `System` via the `tstops` keyword instead."))
+    end
 
     has_vrjs = any(x -> x isa VariableRateJump, jumps(sys))
     has_eqs = !isempty(equations(sys))
@@ -16,13 +21,13 @@
             prob = SDEProblem{iip, spec}(
                 sys, op, tspan; check_compatibility = false,
                 build_initializeprob = false, checkbounds, cse, check_length = false,
-                _skip_events = true, kwargs...
+                _skip_events = true, _skip_tstops = true, kwargs...
             )
         elseif has_eqs
             prob = ODEProblem{iip, spec}(
                 sys, op, tspan; check_compatibility = false,
                 build_initializeprob = false, checkbounds, cse, check_length = false,
-                _skip_events = true, kwargs...
+                _skip_events = true, _skip_tstops = true, kwargs...
             )
         else
             _, u0,
@@ -57,6 +62,11 @@
         )
         prob = DiscreteProblem(df, u0, tspan, p; kwargs...)
     end
+
+    # Create SymbolicTstops for all paths and forward via JumpProblem kwargs.
+    # Inner problems (SDEProblem/ODEProblem) are created with _skip_tstops = true
+    # to avoid duplication.
+    tstops = SymbolicTstops(sys; eval_expression, eval_module)
 
     dvs = unknowns(sys)
     unknowntoid = Dict(value(unknown) => i for (i, unknown) in enumerate(dvs))
@@ -107,6 +117,9 @@
 
     if rng !== nothing
         kwargs = (; kwargs..., rng)
+    end
+    if tstops !== nothing
+        kwargs = (; kwargs..., tstops)
     end
     return JumpProblem(
         prob, aggregator, jset; dep_graph = jtoj, vartojumps_map = vtoj,

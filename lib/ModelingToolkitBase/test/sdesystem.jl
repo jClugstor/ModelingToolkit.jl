@@ -1105,6 +1105,62 @@ end
     @test !(sol3.u[end] ≈ sol4.u[end])
 end
 
+@testset "Pure SDE with symbolic tstops" begin
+    @variables X(tt)
+    @parameters k σ_noise t1 t2
+    @brownians B
+    eqs = [D(X) ~ k + σ_noise * B]
+    ev1 = (tt == t1) => [X ~ Pre(X) + 50.0]
+    ev2 = (tt == t1 * t2) => [X ~ Pre(X) + 100.0]
+    @mtkcompile sys = System(eqs, tt, [X], [k, σ_noise, t1, t2], [B];
+        discrete_events = [ev1, ev2], tstops = [[t1], [t1 * t2]])
+
+    sprob = SDEProblem(sys,
+        [X => 0.0, k => 1.0, σ_noise => 0.01, t1 => 2.0, t2 => 3.0],
+        (0.0, 10.0))
+
+    @test haskey(sprob.kwargs, :tstops)
+    @test sprob.kwargs[:tstops] isa ModelingToolkitBase.SymbolicTstops
+    @test Set(sprob.kwargs[:tstops](sprob.p, (0.0, 10.0))) == Set([2.0, 6.0])
+
+    sol = solve(sprob, SOSRI())
+    @test SciMLBase.successful_retcode(sol)
+
+    # Events at t1=2.0 and t1*t2=6.0 should fire
+    @test sol(2.0 + 0.001; idxs = X) - sol(2.0 - 0.001; idxs = X) ≈ 50.0 atol = 2
+    @test sol(6.0 + 0.001; idxs = X) - sol(6.0 - 0.001; idxs = X) ≈ 100.0 atol = 2
+end
+
+# Periodic scalar tstops on pure SDE with a symbolic periodic condition.
+# Verifies that scalar tstops exclude tspan[1] (consistent with PeriodicCallback)
+# and that the event fires at multiple periodic stops.
+@testset "Periodic scalar tstops on pure SDE" begin
+    @variables X(tt)
+    @parameters k σ_noise t1
+    @brownians B
+    eqs = [D(X) ~ k + σ_noise * B]
+    # Single event with symbolic periodic condition: fires at every multiple of t1
+    ev = (mod(tt, t1) == 0) => [X ~ Pre(X) + 50.0]
+    # Scalar tstop t1 → periodic range (tspan[1]+t1):t1:tspan[2]
+    @mtkcompile sys = System(eqs, tt, [X], [k, σ_noise, t1], [B];
+        discrete_events = [ev], tstops = [t1])
+
+    sprob = SDEProblem(sys,
+        [X => 0.0, k => 1.0, σ_noise => 0.01, t1 => 3.0],
+        (0.0, 10.0))
+
+    @test haskey(sprob.kwargs, :tstops)
+    @test sprob.kwargs[:tstops] isa ModelingToolkitBase.SymbolicTstops
+    @test Set(sprob.kwargs[:tstops](sprob.p, (0.0, 10.0))) == Set(3.0:3.0:10.0)
+
+    sol = solve(sprob, SOSRI())
+    @test SciMLBase.successful_retcode(sol)
+
+    # Periodic event should fire at t=3.0 and t=6.0 (+50 each time)
+    @test sol(3.0 + 0.001; idxs = X) - sol(3.0 - 0.001; idxs = X) ≈ 50.0 atol = 2
+    @test sol(6.0 + 0.001; idxs = X) - sol(6.0 - 0.001; idxs = X) ≈ 50.0 atol = 2
+end
+
 if !@isdefined(ModelingToolkit)
     @testset "MTKBase `mtkcompile` creates appropriately sized `noise_eqs`" begin
         @variables X(t) A(t)

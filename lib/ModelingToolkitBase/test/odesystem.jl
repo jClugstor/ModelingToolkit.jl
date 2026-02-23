@@ -1495,11 +1495,11 @@ end
     )
     prob = ODEProblem(sys, [], (0.0, 5.0))
     sol = solve(prob)
-    expected_tstops = unique!(sort!(vcat(0.0:0.075:5.0, 0.1, 0.2, 0.65, 0.35, 0.45)))
+    expected_tstops = unique!(sort!(vcat(0.075:0.075:5.0, 0.1, 0.2, 0.65, 0.35, 0.45)))
     @test all(x -> any(isapprox(x, atol = 1.0e-6), sol.t), expected_tstops)
     prob2 = remake(prob; tspan = (0.0, 10.0))
     sol2 = solve(prob2)
-    expected_tstops = unique!(sort!(vcat(0.0:0.075:10.0, 0.1, 0.2, 0.65, 0.35, 0.45)))
+    expected_tstops = unique!(sort!(vcat(0.075:0.075:10.0, 0.1, 0.2, 0.65, 0.35, 0.45)))
     @test all(x -> any(isapprox(x, atol = 1.0e-6), sol2.t), expected_tstops)
 
     @variables y(t) [guess = 1.0]
@@ -1511,11 +1511,11 @@ end
         sys, [D(y) => 2D(x) / 3y^2, D(x) => p * x + q * t + sum(r)], (0.0, 5.0)
     )
     sol = solve(prob, DImplicitEuler())
-    expected_tstops = unique!(sort!(vcat(0.0:0.075:5.0, 0.1, 0.2, 0.65, 0.35, 0.45)))
+    expected_tstops = unique!(sort!(vcat(0.075:0.075:5.0, 0.1, 0.2, 0.65, 0.35, 0.45)))
     @test all(x -> any(isapprox(x, atol = 1.0e-6), sol.t), expected_tstops)
     prob2 = remake(prob; tspan = (0.0, 10.0))
     sol2 = solve(prob2, DImplicitEuler())
-    expected_tstops = unique!(sort!(vcat(0.0:0.075:10.0, 0.1, 0.2, 0.65, 0.35, 0.45)))
+    expected_tstops = unique!(sort!(vcat(0.075:0.075:10.0, 0.1, 0.2, 0.65, 0.35, 0.45)))
     @test all(x -> any(isapprox(x, atol = 1.0e-6), sol2.t), expected_tstops)
 
     @mtkcompile sys = System([D(x) ~ x + p], t; tstops = [[p]])
