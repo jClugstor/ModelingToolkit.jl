@@ -4,8 +4,9 @@ module MTKBifurcationKitExt
 
 # Imports
 using ModelingToolkitBase, Setfield
+using SimpleNonlinearSolve
 import BifurcationKit
-using SymbolicIndexingInterface: is_time_dependent
+using SymbolicIndexingInterface: is_time_dependent, ProblemState
 
 ### Observable Plotting Handling ###
 
@@ -90,7 +91,7 @@ function (orfs::ObservableRecordFromSolution)(x, p; k...)
     end
 
     # Substitutes in the value for all states, parameters, and observables into the equation for the designated observable.
-    return substitute(orfs.obs_eqs[orfs.target_obs_idx].rhs, orfs.subs_vals)
+    return Symbolics.value(substitute(orfs.obs_eqs[orfs.target_obs_idx].rhs, orfs.subs_vals; fold = Val(true)))::eltype(x)
 end
 
 ### Creates BifurcationProblem Overloads ###
@@ -135,10 +136,18 @@ function BifurcationKit.BifurcationProblem(
     u0_bif = ModelingToolkitBase.to_varmap(u0_bif, unknowns(nsys))
     ps = ModelingToolkitBase.to_varmap(ps, ModelingToolkitBase.get_ps(nsys))
     op = merge(u0_bif, ps)
-    _, u0_bif_vals, p_vals = ModelingToolkitBase.process_SciMLProblem(
-        ModelingToolkitBase.EmptySciMLFunction{true}, nsys, op; build_initializeprob = false
+    f, u0_bif_vals, p_vals = ModelingToolkitBase.process_SciMLProblem(
+        ModelingToolkitBase.EmptySciMLFunction{true}, nsys, op; build_initializeprob = true
     )
-
+    idata = get(f.kwargs, :initialization_data, nothing)
+    if idata !== nothing
+        temp_f = NonlinearFunction{true}(Returns(nothing); initialization_data = idata)
+        temp_prob = NonlinearProblem(temp_f, u0_bif_vals, p_vals)
+        u0_bif_vals, p_vals, success = SciMLBase.get_initial_values(
+            temp_prob, temp_prob, temp_f, SciMLBase.OverrideInit(), Val(true);
+            nlsolve_alg = SimpleNewtonRaphson(), abstol = 1.0e-8, reltol = 1.0e-8
+        )
+    end
     # Computes bifurcation parameter and the plotting function.
     bif_idx = findfirst(isequal(bif_par), ModelingToolkitBase.get_ps(nsys))
     if !isnothing(plot_var)
