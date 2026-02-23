@@ -227,6 +227,13 @@ function generate_initializesystem_timeindependent(
     og_dvs = as_atomic_array_set(unknowns(_sys))
     union!(og_dvs, as_atomic_array_set(observables(_sys)))
 
+    initialvars_sub = SymmapT()
+    for var in og_dvs
+        arr, _ = split_indexed_var(var)
+        initialvars_sub[arr] = Initial(arr)
+    end
+    initialvars_subber = SU.Substituter{false}(AADSubWrapper(initialvars_sub))
+
     init_vars_set = AtomicArraySet{OrderedDict{SymbolicT, Nothing}}()
 
     eqs_ics = Equation[]
@@ -298,7 +305,7 @@ function generate_initializesystem_timeindependent(
             push!(eqs_ics, k ~ Initial(k))
             op[Initial(k)] = v
         else
-            push!(eqs_ics, k ~ v)
+            push!(eqs_ics, initialvars_subber(k ~ v))
         end
     end
 
