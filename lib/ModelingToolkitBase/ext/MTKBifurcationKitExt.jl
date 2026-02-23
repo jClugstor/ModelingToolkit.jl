@@ -91,7 +91,7 @@ function (orfs::ObservableRecordFromSolution)(x, p; k...)
     end
 
     # Substitutes in the value for all states, parameters, and observables into the equation for the designated observable.
-    return substitute(orfs.obs_eqs[orfs.target_obs_idx].rhs, orfs.subs_vals)
+    return Symbolics.value(substitute(orfs.obs_eqs[orfs.target_obs_idx].rhs, orfs.subs_vals; fold = Val(true)))::eltype(x)
 end
 
 ### Creates BifurcationProblem Overloads ###
