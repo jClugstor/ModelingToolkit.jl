@@ -127,7 +127,8 @@ function MTKBase.__mtkcompile(
             guesses = guesses(sys), initialization_eqs = initialization_equations(sys),
             continuous_events = continuous_events(sys),
             discrete_events = discrete_events(sys),
-            gui_metadata = get_gui_metadata(sys)
+            gui_metadata = get_gui_metadata(sys),
+            tstops = symbolic_tstops(sys)
         )
         return ssys
     end
