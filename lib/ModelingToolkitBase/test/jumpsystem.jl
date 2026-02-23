@@ -367,7 +367,7 @@ end
     end
     cmean2 ./= N
 
-    @test all(abs.(cmean .- cmean2) .<= 0.10 .* cmean)
+    @test all(abs.(cmean .- cmean2) .<= 0.1 .* cmean)
 end
 
 # collect_vars! tests for jumps

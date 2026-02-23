@@ -344,11 +344,21 @@ const set_scalar_metadata = setmetadata
 @public collect_var_to_name!, collect_vars!, eqtype_supports_collect_vars, hasdefault
 @public getdefault, setdefault, iscomplete, isparameter, modified_unknowns!
 @public renamespace, namespace_equations
+@public check_mutable_cache, store_to_mutable_cache!, should_invalidate_mutable_cache_entry
 
 for prop in [SYS_PROPS; [:continuous_events, :discrete_events]]
     getter = Symbol(:get_, prop)
     hasfn = Symbol(:has_, prop)
     @eval @public $getter, $hasfn
+end
+
+# AbstractSystem types should be treated as inactive (constant) for Enzyme.
+# Property access on systems retrieves symbolic metadata, not numerical values.
+import EnzymeCore
+function EnzymeCore.EnzymeRules.inactive_noinl(
+        ::typeof(Base.getproperty), ::AbstractSystem, ::Symbol,
+    )
+    return true
 end
 
 function __init__()

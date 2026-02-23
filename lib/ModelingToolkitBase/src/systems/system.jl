@@ -1504,3 +1504,44 @@ function Base.copy(sys::System)
         copy(get_isscheduled(sys)), _maybe_copy(get_schedule(sys)); checks = false
     )
 end
+
+# Mutable system cache
+"""
+    $TYPEDSIGNATURES
+
+If the mutable cache of `sys` contains an entry for key `K` return it. Otherwise,
+return `default`. `V` is the expected type of the cache entry, if it exists.
+"""
+function check_mutable_cache(
+        sys::System, @nospecialize(K::DataType), ::Type{V}, default::D
+    )::Union{V, D} where {V, D}
+    cache = getmetadata(sys, MutableCacheKey, nothing)
+    cache isa MutableCacheT || return default
+    return get(cache, K, default)::Union{V, D}
+end
+
+"""
+    $TYPEDSIGNATURES
+
+Store into the mutable cache of `sys` the key-value pair `K => value`.
+"""
+function store_to_mutable_cache!(sys::System, @nospecialize(K::DataType), value)
+    cache = getmetadata(sys, MutableCacheKey, nothing)
+    cache isa MutableCacheT || return nothing
+    cache[K] = value
+    return nothing
+end
+
+"""
+    $TYPEDSIGNATURES
+
+Return a `Bool` indicating whether the cached entry associated with key `K` should be
+invalidated if the given `patch` is applied to the system. By default, entries will be
+invalidated on all patches.
+"""
+function should_invalidate_mutable_cache_entry(
+        @nospecialize(K::DataType),
+        @nospecialize(patch::NamedTuple)
+    )
+    return true
+end

@@ -990,16 +990,27 @@ function invalidate_cache!(sys::AbstractSystem)
     return sys
 end
 
+function maybe_invalidate_cache(cache::Dict{DataType, Any}, patch::NamedTuple)
+    filterer = !Base.Fix2(typeassert, Bool) ∘ Base.Fix2(should_invalidate_mutable_cache_entry, patch) ∘ first
+    return filter(filterer, cache)
+end
+function maybe_invalidate_cache(cache::Dict{DataType, Any}, patch::Nothing)
+    empty(cache)
+    return cache
+end
+
 # `::MetadataT` but that is defined later
-function refreshed_metadata(meta::Base.ImmutableDict)
+function refreshed_metadata(meta::Base.ImmutableDict, patch = nothing)
     newmeta = MetadataT()
+    hascache = false
     for (k, v) in meta
         if k === MutableCacheKey
-            v = MutableCacheT()
+            hascache = true
+            v = maybe_invalidate_cache(v::MutableCacheT, patch)::MutableCacheT
         end
         newmeta = Base.ImmutableDict(newmeta, k => v)
     end
-    if !haskey(newmeta, MutableCacheKey)
+    if !hascache
         newmeta = Base.ImmutableDict(newmeta, MutableCacheKey => MutableCacheT())
     end
     return newmeta
@@ -1014,7 +1025,7 @@ end
             if fn in fieldnames(patch)
                 :(patch.$fn)
             elseif fn == :metadata
-                :($refreshed_metadata(getfield(obj, $(Meta.quot(fn)))))
+                :($refreshed_metadata(getfield(obj, $(Meta.quot(fn))), patch))
             else
                 :(getfield(obj, $(Meta.quot(fn))))
             end
@@ -2622,7 +2633,7 @@ function _named(name, call, runtime = false)
     end
     op = call.args[1]
     return quote
-        $is_sys_construction = ($op isa $DataType) && ($op <: $AbstractSystem)
+        $is_sys_construction = ($op isa $Type) && ($op <: $AbstractSystem)
         $call
     end
 end
