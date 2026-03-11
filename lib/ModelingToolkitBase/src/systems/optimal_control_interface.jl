@@ -327,6 +327,13 @@ function process_DynamicOptProblem(
     tunable_set = Set(default_toterm.(tunable_params))
     pmap = filter(kvp -> first(kvp) ∉ tunable_set, pmap)
 
+    # Resolve parameter bindings so observed equations and constraints
+    # referencing pre-binding names can be fully substituted.
+    for (k, v) in bindings(sys)
+        ismissing(v) && continue
+        haskey(pmap, v) && !haskey(pmap, k) && (pmap[k] = pmap[v])
+    end
+
     c0 = value.([pmap[c] for c in ctrls])
     p0, _ = SciMLStructures.canonicalize(SciMLStructures.Tunable(), p)
 
