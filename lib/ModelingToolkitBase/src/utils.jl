@@ -1042,7 +1042,7 @@ Get a dictionary mapping variables eliminated from the system during `mtkcompile
 expressions used to calculate them.
 """
 function get_substitutions(sys)
-    obs = observed(unhack_system(sys))
+    obs = observed(sys)
     rules = Dict{SymbolicT, SymbolicT}()
     substituter = SU.Substituter{false}(rules, SU.default_substitute_filter)
     for eq in obs

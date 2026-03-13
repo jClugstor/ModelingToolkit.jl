@@ -362,7 +362,7 @@ end
     @variables x[1:3] y[1:3]
     @mtkcompile sys = System([p * x ~ r, q * y ~ s])
     @test issetequal(bound_parameters(sys), [q, s])
-    prob = SCCNonlinearProblem(sys, [p => ones(3, 3), r => ones(3)])
+    prob = SCCNonlinearProblem(sys, [p => ones(3, 3), r => ones(3)]; combine_sccs = false)
     @test issetequal(bound_parameters(prob.probs[1].f.sys), [q, s])
     @test issetequal(bound_parameters(prob.probs[2].f.sys), [q, s])
 end

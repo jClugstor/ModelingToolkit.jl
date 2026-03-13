@@ -149,7 +149,7 @@ end
     @named sys = System([D(x) ~ 2x + t], t)
     sys, dcp = ModelingToolkitBase.add_diffcache(sys, 8)
 
-    @test SU.symtype(dcp) === Any
+    @test SU.symtype(dcp) === SU.FnType{Tuple, Any, Any}
     sys = complete(sys)
     prob = ODEProblem(sys, [x => 1.0], (0.0, 1.0))
     diffcachewrapper = prob.ps[dcp]

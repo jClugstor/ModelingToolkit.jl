@@ -1341,16 +1341,41 @@ function parse_equations!(exprs, eqs, dict, body)
     return
 end
 
+function check_event_syntax(line)
+    if line.args[1] == :(=>)
+        return true
+    elseif (line.head == :(...)) || 
+           (line.head == :generator) || 
+           (line.head == :comprehension)|| 
+           (line.head == :if)
+        return check_event_syntax(line.args[1])
+    else
+        return false
+    end
+end
+
 function parse_continuous_events!(c_evts, dict, body)
     dict[:continuous_events] = []
     Base.remove_linenums!(body)
     for line in body.args
         if length(line.args) == 3 && line.args[1] == :(=>)
             push!(c_evts, :(($line, ())))
+        elseif length(line.args) == 2 && (line.head == :if)
+            for subline in line.args[2].args
+                if !check_event_syntax(subline)
+                    error("Malformed continuous event $subline.")
+                end
+            end
+            push!(c_evts, :(($line, ())))
         elseif length(line.args) == 2
             event = line.args[1]
             kwargs = parse_event_kwargs(line.args[2])
             push!(c_evts, :(($event, $kwargs)))
+        elseif (length(line.args) == 1) && (line.head == :(...))
+            if !check_event_syntax(line.args[1].args[1].args[1])
+                error("Malformed continuous event $subline.")
+            end
+            push!(c_evts, :(($line)))
         else
             error("Malformed continuous event $line.")
         end
@@ -1365,10 +1390,22 @@ function parse_discrete_events!(d_evts, dict, body)
     for line in body.args
         if length(line.args) == 3 && line.args[1] == :(=>)
             push!(d_evts, :(($line, ())))
+        elseif length(line.args) == 2 && (line.head == :if)
+            for subline in line.args[2].args
+                if !check_event_syntax(subline)
+                    error("Malformed discrete event $subline.")
+                end
+            end
+            push!(d_evts, :(($line, ())))
         elseif length(line.args) == 2
             event = line.args[1]
             kwargs = parse_event_kwargs(line.args[2])
             push!(d_evts, :(($event, $kwargs)))
+        elseif (length(line.args) == 1) && (line.head == :(...))
+            if !check_event_syntax(line.args[1].args[1].args[1])
+                error("Malformed discrete event $line.")
+            end
+            push!(d_evts, :(($line)))
         else
             error("Malformed discrete event $line.")
         end
