@@ -544,6 +544,10 @@ function add_array_observed!(obseqs::Vector{Equation})
         for i in SU.stable_eachindex(var)
             push!(scal, var[i])
         end
+        if all(isone, firstind)
+            push!(obseqs, var ~ reshape(scal, size(var)))
+            continue
+        end
         push!(obseqs, var ~ offset_array(firstind, reshape(scal, size(var))))
     end
     return

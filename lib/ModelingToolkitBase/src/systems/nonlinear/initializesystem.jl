@@ -805,7 +805,18 @@ function unhack_observed(obseqs, eqs)
     mask = trues(length(obseqs))
     for (i, eq) in enumerate(obseqs)
         mask[i] = Moshi.Match.@match eq.rhs begin
-            BSImpl.Term(; f) => f !== offset_array
+            BSImpl.Term(; f, args) => if f === offset_array
+                false
+            elseif f === SU.array_literal
+                is_scal = true
+                for (arri, argi) in zip(SU.stable_eachindex(eq.lhs), Iterators.drop(eachindex(args), 1))
+                    is_scal &= isequal(eq.lhs[arri], args[argi])
+                    is_scal || break
+                end
+                !is_scal
+            else
+                true
+            end
             _ => true
         end
     end
