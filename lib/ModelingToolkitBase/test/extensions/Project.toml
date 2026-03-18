@@ -31,7 +31,7 @@ TaylorDiff = "b36ab563-344f-407b-a36a-4f200bebf99c"
 Zygote = "e88e6eb3-aa80-5325-afca-941959d7151f"
 
 [sources]
-ModelingToolkitBase = {subdir = "../.."}
+ModelingToolkitBase = {path = "../.."}
 
 [compat]
 CasADi = "1.0.6"
