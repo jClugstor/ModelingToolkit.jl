@@ -283,9 +283,6 @@ function build_caches!(sys::System, decomposition::SCCDecomposition)
     banned_vars = Set{SymbolicT}()
     state = Dict()
     prev_obseqs = Equation[]
-    # We use the unhacked system to avoid spurious array hack observed equations
-    # from making it in when the elements of the array are spread across SCCs.
-    unhacked_sys = unhack_system(sys)
     for i in eachindex(decomposition.subsystems)
         empty!(banned_vars)
         empty!(state)
@@ -293,6 +290,12 @@ function build_caches!(sys::System, decomposition::SCCDecomposition)
         subsys = decomposition.subsystems[i]
         union!(banned_vars, unknowns(subsys))
         union!(banned_vars, observables(subsys))
+        for u in unknowns(subsys)
+            push!(banned_vars, split_indexed_var(u)[1])
+        end
+        for u in observables(subsys)
+            push!(banned_vars, split_indexed_var(u)[1])
+        end
 
         _obs = get_observed(subsys)
         for i in eachindex(_obs)
@@ -349,7 +352,7 @@ function build_caches!(sys::System, decomposition::SCCDecomposition)
             push!(buf, k)
         end
         all_cacheexprs = reduce(vcat, values(cacheexprs); init = SymbolicT[])
-        obsidxs_for_scc_cacheexprs = observed_equations_used_by(unhacked_sys, all_cacheexprs)
+        obsidxs_for_scc_cacheexprs = observed_equations_used_by(sys, all_cacheexprs)
         push!(decomposition.obsidxs_for_cacheexprs, obsidxs_for_scc_cacheexprs)
         # update the sizes of cache buffers
         for (T, buf) in cachevars
@@ -510,8 +513,6 @@ function SciMLBase.SCCNonlinearProblem{iip}(
     ps = parameters(sys)
     eqs = equations(sys)
     obs = observed(sys)
-    unhacked_sys = unhack_system(sys)
-    unhacked_obs = observed(unhacked_sys)
 
     _, u0, p = process_SciMLProblem(
         EmptySciMLFunction{iip}, sys, op; eval_expression, eval_module, symbolic_u0 = true,
@@ -542,7 +543,7 @@ function SciMLBase.SCCNonlinearProblem{iip}(
             push!(
                 explicitfuns,
                 CacheWriter(
-                    sys, decomposition.cachetypes, cacheexprs, solsyms, unhacked_obs[_prevobsidxs];
+                    sys, decomposition.cachetypes, cacheexprs, solsyms, obs[_prevobsidxs];
                     eval_expression, eval_module, cse
                 )
             )
