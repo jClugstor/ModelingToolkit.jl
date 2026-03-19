@@ -47,3 +47,9 @@ end
     @test y ∈ Set(unknowns(sys))
     @test q ∈ Set(parameters(sys))
 end
+
+@testset "`Adjoint` in equations" begin
+    @variables x(t)[1:3, 1:3]
+    @named sys = System([D(x) ~ x'], t)
+    @test_nowarn mtkcompile(sys)
+end
