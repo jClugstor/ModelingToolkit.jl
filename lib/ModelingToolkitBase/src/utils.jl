@@ -1246,7 +1246,6 @@ function observed_equations_used_by(
         arrsym = iscall(sym) && operation(sym) === getindex ? arguments(sym)[1] : nothing
         idx = @something(
             get(obsvar_to_idx, sym, nothing),
-            get(obsvar_to_idx, arrsym, nothing),
             Some(nothing)
         )
         idx === nothing && continue
