@@ -670,3 +670,110 @@ end
     isol2 = solve(iprob2, InfiniteOptCollocation(Ipopt.Optimizer))
     @test isol2.sol[y][end] > 0
 end
+
+@testset "Parameter bindings resolved in dynamic optimization pmap" begin
+    # When a subsystem parameter is bound to a parent parameter after mtkcompile,
+    # the pmap used for symbolic substitution must include the bound parameter values
+    # so that observed equations and constraints referencing pre-binding names resolve.
+
+    @parameters k = 2.0 q = k
+    @variables x(t) obs_val(t)
+    @variables u(t) [input = true, bounds = (-10.0, 10.0)]
+
+    # q is bound to k: after mtkcompile, q won't be in parameters(sys),
+    # but observed equations may reference it.
+    eqs = [
+        D(x) ~ -k * x + u,
+        obs_val ~ q * x  # observed equation references bound parameter q
+    ]
+    cost = [-EvalAt(1.0)(obs_val)]
+
+    @named sys = System(eqs, t; costs = cost)
+    sys = mtkcompile(sys; inputs = [u])
+
+    # Confirm q is a bound parameter
+    @test q ∉ Set(parameters(sys))
+    b = bindings(sys)
+    @test haskey(b, q)
+
+    u0map = [x => 1.0]
+    pmap = [u => 0.0]
+    tspan = (0.0, 1.0)
+
+    # Without the binding resolution fix, this would fail because
+    # pmap would not contain q, and the cost substitution would be incomplete.
+    jprob = JuMPDynamicOptProblem(sys, [u0map; pmap], tspan; dt = 0.1)
+    jsol = solve(jprob, JuMPCollocation(Ipopt.Optimizer, constructRK4()))
+    @test jsol.sol[x][end] > jsol.sol[x][begin]
+
+    iprob = InfiniteOptDynamicOptProblem(sys, [u0map; pmap], tspan; dt = 0.1)
+    isol = solve(iprob, InfiniteOptCollocation(Ipopt.Optimizer))
+    @test isol.sol[x][end] > isol.sol[x][begin]
+
+    if ENABLE_CASADI
+        cprob = CasADiDynamicOptProblem(sys, [u0map; pmap], tspan; dt = 0.1)
+        csol = solve(cprob, CasADiCollocation("ipopt", constructRK4()))
+        @test csol.sol[x][end] > csol.sol[x][begin]
+    end
+
+    # test with free final t
+    @parameters tf
+    cost2 = [-EvalAt(tf)(obs_val)]
+
+    @named sys = System(eqs, t; costs = cost2)
+    sys = mtkcompile(sys; inputs = [u])
+
+    @test q ∉ Set(parameters(sys))
+
+    u0map = [x => 1.0]
+    pmap = [u => 0.0, tf => 1.0]
+    tspan = (0.0, tf)
+
+    jprob = JuMPDynamicOptProblem(sys, [u0map; pmap], tspan; steps = 101)
+    jsol = solve(jprob, JuMPCollocation(Ipopt.Optimizer, constructRK4()))
+    @test jsol.sol[x][end] > jsol.sol[x][begin]
+
+    if ENABLE_CASADI
+        cprob = CasADiDynamicOptProblem(sys, [u0map; pmap], tspan; steps = 101)
+        csol = solve(cprob, CasADiCollocation("ipopt", constructRK4()))
+        @test csol.sol[x][end] > csol.sol[x][begin]
+    end
+end
+
+@testset "Observed variables with bound parameters in constraints" begin
+    @parameters k = 2.0 q = k
+    @variables x(t) obs_val(t)
+    @variables u(t) [input = true, bounds = (-10.0, 10.0)]
+
+    eqs = [
+        D(x) ~ -k * x + u,
+        obs_val ~ q * x
+    ]
+
+    # Fixed-time constraint using observed variable with bound parameter
+    constr = [EvalAt(1.0)(obs_val) ≲ 0.8]
+    @named sys = System(eqs, t; constraints = constr)
+    sys = mtkcompile(sys; inputs = [u])
+
+    @test q ∉ Set(parameters(sys))
+
+    u0map = [x => 1.0]
+    pmap = [u => 0.0]
+    tspan = (0.0, 1.0)
+
+    jprob = JuMPDynamicOptProblem(sys, [u0map; pmap], tspan; dt = 0.1)
+    jsol = solve(jprob, JuMPCollocation(Ipopt.Optimizer, constructRK4()))
+    # obs_val(1.0) = 2*x(1.0) should satisfy the constraint ≤ 5.0
+    @test 2 * jsol.sol[x][end] ≤ 0.8
+
+    # Free final time constraint using observed variable with bound parameter
+    @parameters tf
+    constr_tf = [EvalAt(tf)(obs_val) ≲ 0.8]
+    @named sys_tf = System(eqs, t; constraints = constr_tf)
+    sys_tf = mtkcompile(sys_tf; inputs = [u])
+
+    pmap_tf = [u => 0.0, tf => 1.0]
+    jprob_tf = JuMPDynamicOptProblem(sys_tf, [u0map; pmap_tf], (0.0, tf); steps = 101)
+    jsol_tf = solve(jprob_tf, JuMPCollocation(Ipopt.Optimizer, constructRK4()))
+    @test 2 * jsol_tf.sol[x][end] ≤ 0.8
+end
