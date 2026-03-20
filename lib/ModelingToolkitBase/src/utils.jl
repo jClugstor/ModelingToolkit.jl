@@ -1246,7 +1246,6 @@ function observed_equations_used_by(
         arrsym = iscall(sym) && operation(sym) === getindex ? arguments(sym)[1] : nothing
         idx = @something(
             get(obsvar_to_idx, sym, nothing),
-            get(obsvar_to_idx, arrsym, nothing),
             Some(nothing)
         )
         idx === nothing && continue
@@ -1418,8 +1417,8 @@ function flatten_equation(eq::Equation)::Vector{Equation}
     if !SU.is_array_shape(SU.shape(eq.lhs))
         return [eq]
     end
-    lhs = vec(collect(eq.lhs)::Array{SymbolicT})::Vector{SymbolicT}
-    rhs = vec(collect(eq.rhs)::Array{SymbolicT})::Vector{SymbolicT}
+    lhs = vec(collect(collect(eq.lhs)::AbstractArray{SymbolicT}))::Vector{SymbolicT}
+    rhs = vec(collect(collect(eq.rhs)::AbstractArray{SymbolicT}))::Vector{SymbolicT}
     result = Equation[]
     for (l, r) in zip(lhs, rhs)
         push!(result, l ~ r)
