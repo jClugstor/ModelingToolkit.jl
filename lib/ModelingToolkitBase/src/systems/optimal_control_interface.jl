@@ -330,7 +330,7 @@ function process_DynamicOptProblem(
     # Resolve parameter bindings so observed equations and constraints
     # referencing pre-binding names can be fully substituted.
     for (k, v) in bindings(sys)
-        ismissing(v) && continue
+        v === COMMON_MISSING && continue
         haskey(pmap, v) && !haskey(pmap, k) && (pmap[k] = pmap[v])
     end
 
