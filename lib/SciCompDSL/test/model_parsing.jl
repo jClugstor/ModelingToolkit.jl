@@ -539,7 +539,7 @@ using ModelingToolkitBase: D_nounits
           model.d => 0]
 
     prob = ODEProblem(model, u0, (0, 5.0))
-    sol = ModelingToolkit.solve(prob, Tsit5(), tstops = [1.5, 2.5])
+    sol = solve(prob, Tsit5(), tstops = [1.5, 2.5])
 
 
     @test isequal(sol[model.y][end], 1.0)
