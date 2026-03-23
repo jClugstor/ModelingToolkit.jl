@@ -422,6 +422,7 @@ function SymbolicContinuousCallback(p::Pair, args...; kwargs...)
     return SymbolicContinuousCallback(p[1], p[2], args...; kwargs...)
 end
 SymbolicContinuousCallback(cb::SymbolicContinuousCallback, args...; kwargs...) = cb
+SymbolicContinuousCallback(cb::Nothing; kwargs...) = nothing
 SymbolicContinuousCallback(cb::Nothing, args...; kwargs...) = nothing
 function SymbolicContinuousCallback(cb::Tuple, args...; kwargs...)
     return if length(cb) == 2
@@ -636,7 +637,8 @@ function to_cb_vector(cbs; CB_TYPE = SymbolicContinuousCallback, kwargs...)
     return if cbs isa Pair
         [CB_TYPE(cbs; kwargs...)]
     else
-        Vector{CB_TYPE}([CB_TYPE(cb; kwargs...) for cb in cbs])
+        cbs_filtered = filter!(c -> !isnothing(c), [CB_TYPE(cb; kwargs...) for cb in cbs])
+        Vector{CB_TYPE}(cbs_filtered)
     end
 end
 
